@@ -360,6 +360,7 @@ export default function DecoderDuel() {
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>("full");
   const [torus, setTorus] = useState(false);
   const [showDecoder, setShowDecoder] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [showPaths, setShowPaths] = useState(true);
   const [game, setGame] = useState<GameState>(makeInitialState());
 
@@ -419,10 +420,40 @@ export default function DecoderDuel() {
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 24, maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={panelStyle()}>
-            <h2 style={{ marginTop: 0 }}>Decoder Duel</h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <h2 style={{ marginTop: 0, marginBottom: 8 }}>Decoder Duel</h2>
+              <button
+                style={{ ...smallButton(showHelp), padding: "6px 10px" }}
+                onClick={() => setShowHelp((v) => !v)}
+                aria-expanded={showHelp}
+                aria-controls="toric-help"
+              >
+                {showHelp ? "Hide help" : "Help"}
+              </button>
+            </div>
             <p style={{ color: "#475569", fontSize: 14 }}>
               Edge-qubit toric-code game. Use <strong>Z</strong> to toggle endpoint vertex defects, <strong>X</strong> to toggle adjacent plaquette defects, and <strong>Y</strong> to do both.
             </p>
+            {showHelp && (
+              <div
+                id="toric-help"
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 12,
+                  background: "#f8fafc",
+                  padding: 12,
+                  marginBottom: 12,
+                  color: "#334155",
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                }}
+              >
+                The toric code stores quantum information on a 2D lattice of qubits, and errors show up as pairs of
+                local defect signals. In this game, applying <strong>Z</strong> flips vertex defects and applying{" "}
+                <strong>X</strong> flips plaquette defects. Decoding means connecting and canceling those defect pairs
+                with as few edge operations as possible.
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
               <button style={smallButton(tool === "Z")} onClick={() => setTool("Z")}>Z</button>
               <button style={smallButton(tool === "X")} onClick={() => setTool("X")}>X</button>

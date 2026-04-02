@@ -448,10 +448,70 @@ export default function DecoderDuel() {
                   lineHeight: 1.45,
                 }}
               >
-                The toric code stores quantum information on a 2D lattice of qubits, and errors show up as pairs of
-                local defect signals. In this game, applying <strong>Z</strong> flips vertex defects and applying{" "}
-                <strong>X</strong> flips plaquette defects. Decoding means connecting and canceling those defect pairs
-                with as few edge operations as possible.
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Guide</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 10 }}>
+                  <a href="#help-about">1. About toric code</a>
+                  <a href="#help-errors">2. Error types</a>
+                  <a href="#help-syndromes">3. Vertex and plaquette syndromes</a>
+                  <a href="#help-algorithms">4. Error correction algorithms</a>
+                  <a href="#help-modes">5. How to play each mode</a>
+                  <a href="#help-extras">6. Extra tips</a>
+                </div>
+
+                <h4 id="help-about" style={{ margin: "10px 0 4px" }}>1. About toric code</h4>
+                <p style={{ margin: 0 }}>
+                  The toric code is a topological quantum error-correcting code on a 2D lattice of qubits (here: edge
+                  qubits). Physical errors do not directly reveal logical information, but they create local syndrome
+                  signals that can be decoded.
+                </p>
+
+                <h4 id="help-errors" style={{ margin: "10px 0 4px" }}>2. Error types</h4>
+                <p style={{ margin: 0 }}>
+                  In this game, edge operations represent Pauli errors/corrections:
+                  <strong> X</strong> flips neighboring plaquette checks, <strong>Z</strong> flips neighboring vertex
+                  checks, and <strong>Y</strong> acts like X and Z together.
+                </p>
+
+                <h4 id="help-syndromes" style={{ margin: "10px 0 4px" }}>3. Vertex and plaquette syndromes</h4>
+                <p style={{ margin: 0 }}>
+                  A highlighted vertex defect means an odd parity at a vertex check; a highlighted plaquette defect
+                  means odd parity at a face check. Valid corrections pair and cancel defects by drawing paths across
+                  edges.
+                </p>
+
+                <h4 id="help-algorithms" style={{ margin: "10px 0 4px" }}>4. Error correction algorithms</h4>
+                <p style={{ margin: 0 }}>
+                  <strong>Greedy</strong> matches nearby defects quickly. <strong>Minimum weight matching</strong>{" "}
+                  searches globally for low-total-length pairings and is usually stronger when syndrome patterns are
+                  complex.
+                </p>
+
+                <h4 id="help-modes" style={{ margin: "10px 0 4px" }}>5. How to play each mode</h4>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                  <li>
+                    <strong>Solo:</strong> play both attacker and decoder yourself; clear defects efficiently and build
+                    score.
+                  </li>
+                  <li>
+                    <strong>Two player:</strong> players alternate moves and compete on score.
+                  </li>
+                  <li>
+                    <strong>Adversarial:</strong> P1 attacks for two moves, then P2 decodes for one move. P2 wins by
+                    clearing defects; P1 wins by driving defect count high.
+                  </li>
+                </ul>
+
+                <h4 id="help-extras" style={{ margin: "10px 0 4px" }}>6. Extra tips</h4>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                  <li>Use <strong>Errors only</strong> view to focus on syndrome structure.</li>
+                  <li>
+                    Toggle <strong>Torus mode</strong> to allow wraparound paths, which can shorten corrections.
+                  </li>
+                  <li>
+                    Use <strong>Show decoder</strong> to inspect suggested paths before pressing{" "}
+                    <strong>Apply decoder automatically</strong>.
+                  </li>
+                </ul>
               </div>
             )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>

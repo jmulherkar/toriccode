@@ -1,8 +1,9 @@
 import { useState } from "react";
 import DecoderDuel from "./DecoderDuel";
+import LearnToricCode from "./LearnToricCode";
 import QuantumQwirkle from "./QuantumQwirkle";
 
-type Game = "decoder" | "qwirkle";
+type Game = "decoder" | "learn" | "qwirkle";
 
 export default function App() {
   const [game, setGame] = useState<Game>("decoder");
@@ -37,6 +38,13 @@ export default function App() {
         </button>
 
         <button
+          style={buttonStyle(game === "learn")}
+          onClick={() => setGame("learn")}
+        >
+          Learn Toric Code
+        </button>
+
+        <button
           style={buttonStyle(game === "qwirkle")}
           onClick={() => setGame("qwirkle")}
         >
@@ -47,6 +55,7 @@ export default function App() {
       {/* Game view */}
       <div>
         {game === "decoder" && <DecoderDuel />}
+        {game === "learn" && <LearnToricCode />}
         {game === "qwirkle" && <QuantumQwirkle />}
       </div>
     </div>

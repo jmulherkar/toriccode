@@ -360,7 +360,6 @@ export default function DecoderDuel() {
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>("full");
   const [torus, setTorus] = useState(false);
   const [showDecoder, setShowDecoder] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
   const [showPaths, setShowPaths] = useState(true);
   const [game, setGame] = useState<GameState>(makeInitialState());
 
@@ -420,100 +419,14 @@ export default function DecoderDuel() {
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 24, maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={panelStyle()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <h2 style={{ marginTop: 0, marginBottom: 8 }}>Decoder Duel</h2>
-              <button
-                style={{ ...smallButton(showHelp), padding: "6px 10px" }}
-                onClick={() => setShowHelp((v) => !v)}
-                aria-expanded={showHelp}
-                aria-controls="toric-help"
-              >
-                {showHelp ? "Hide help" : "Help"}
-              </button>
-            </div>
+            <h2 style={{ marginTop: 0, marginBottom: 8 }}>Decoder Duel</h2>
             <p style={{ color: "#475569", fontSize: 14 }}>
-              Edge-qubit toric-code game. Use <strong>Z</strong> to toggle endpoint vertex defects, <strong>X</strong> to toggle adjacent plaquette defects, and <strong>Y</strong> to do both.
+              Competitive toric-code game. Use <strong>Z</strong> to toggle endpoint vertex defects, <strong>X</strong>{" "}
+              to toggle adjacent plaquette defects, and <strong>Y</strong> to do both.
             </p>
-            {showHelp && (
-              <div
-                id="toric-help"
-                style={{
-                  border: "1px solid #cbd5e1",
-                  borderRadius: 12,
-                  background: "#f8fafc",
-                  padding: 12,
-                  marginBottom: 12,
-                  color: "#334155",
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                }}
-              >
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>Guide</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, marginBottom: 10 }}>
-                  <a href="#help-about">1. About toric code</a>
-                  <a href="#help-errors">2. Error types</a>
-                  <a href="#help-syndromes">3. Vertex and plaquette syndromes</a>
-                  <a href="#help-algorithms">4. Error correction algorithms</a>
-                  <a href="#help-modes">5. How to play each mode</a>
-                  <a href="#help-extras">6. Extra tips</a>
-                </div>
-
-                <h4 id="help-about" style={{ margin: "10px 0 4px" }}>1. About toric code</h4>
-                <p style={{ margin: 0 }}>
-                  The toric code is a topological quantum error-correcting code on a 2D lattice of qubits (here: edge
-                  qubits). Physical errors do not directly reveal logical information, but they create local syndrome
-                  signals that can be decoded.
-                </p>
-
-                <h4 id="help-errors" style={{ margin: "10px 0 4px" }}>2. Error types</h4>
-                <p style={{ margin: 0 }}>
-                  In this game, edge operations represent Pauli errors/corrections:
-                  <strong> X</strong> flips neighboring plaquette checks, <strong>Z</strong> flips neighboring vertex
-                  checks, and <strong>Y</strong> acts like X and Z together.
-                </p>
-
-                <h4 id="help-syndromes" style={{ margin: "10px 0 4px" }}>3. Vertex and plaquette syndromes</h4>
-                <p style={{ margin: 0 }}>
-                  A highlighted vertex defect means an odd parity at a vertex check; a highlighted plaquette defect
-                  means odd parity at a face check. Valid corrections pair and cancel defects by drawing paths across
-                  edges.
-                </p>
-
-                <h4 id="help-algorithms" style={{ margin: "10px 0 4px" }}>4. Error correction algorithms</h4>
-                <p style={{ margin: 0 }}>
-                  <strong>Greedy</strong> matches nearby defects quickly. <strong>Minimum weight matching</strong>{" "}
-                  searches globally for low-total-length pairings and is usually stronger when syndrome patterns are
-                  complex.
-                </p>
-
-                <h4 id="help-modes" style={{ margin: "10px 0 4px" }}>5. How to play each mode</h4>
-                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                  <li>
-                    <strong>Solo:</strong> play both attacker and decoder yourself; clear defects efficiently and build
-                    score.
-                  </li>
-                  <li>
-                    <strong>Two player:</strong> players alternate moves and compete on score.
-                  </li>
-                  <li>
-                    <strong>Adversarial:</strong> P1 attacks for two moves, then P2 decodes for one move. P2 wins by
-                    clearing defects; P1 wins by driving defect count high.
-                  </li>
-                </ul>
-
-                <h4 id="help-extras" style={{ margin: "10px 0 4px" }}>6. Extra tips</h4>
-                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                  <li>Use <strong>Errors only</strong> view to focus on syndrome structure.</li>
-                  <li>
-                    Toggle <strong>Torus mode</strong> to allow wraparound paths, which can shorten corrections.
-                  </li>
-                  <li>
-                    Use <strong>Show decoder</strong> to inspect suggested paths before pressing{" "}
-                    <strong>Apply decoder automatically</strong>.
-                  </li>
-                </ul>
-              </div>
-            )}
+            <div style={{ color: "#64748b", fontSize: 13, marginBottom: 12 }}>
+              For concept walkthroughs and interactive lessons, use the <strong>Learn Toric Code</strong> tab.
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
               <button style={smallButton(tool === "Z")} onClick={() => setTool("Z")}>Z</button>
               <button style={smallButton(tool === "X")} onClick={() => setTool("X")}>X</button>

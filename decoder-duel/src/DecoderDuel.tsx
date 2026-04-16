@@ -252,9 +252,9 @@ function badgeStyle(): React.CSSProperties {
 }
 
 function edgeColor(op: Op) {
-  if (op === "X") return "#3b82f6";
-  if (op === "Z") return "#ef4444";
-  if (op === "Y") return "#8b5cf6";
+  if (op === "X") return "#2563eb";
+  if (op === "Z") return "#dc2626";
+  if (op === "Y") return "#7c3aed";
   return "#94a3b8";
 }
 
@@ -546,7 +546,56 @@ export default function DecoderDuel() {
           <div style={{ color: "#64748b", fontSize: 13, marginBottom: 12 }}>
             Click edges to play with the selected operator. The board shows syndrome structure rather than the hidden full error history.
           </div>
-          <div style={{ position: "relative", width: 760, height: 760, maxWidth: "100%", aspectRatio: "1 / 1", border: "1px solid #e2e8f0", borderRadius: 16, background: "white", margin: "0 auto" }}>
+          <div
+            style={{
+              position: "relative",
+              width: 760,
+              height: 760,
+              maxWidth: "100%",
+              aspectRatio: "1 / 1",
+              border: "1px solid #dbe5f0",
+              borderRadius: 24,
+              background: "radial-gradient(circle at top, #ffffff 0%, #f8fafc 65%, #eef4fb 100%)",
+              margin: "0 auto",
+              overflow: "hidden",
+            }}
+          >
+            {Array.from({ length: N + 1 }).flatMap((_, r) =>
+              Array.from({ length: N }).map((_, c) => (
+                <div
+                  key={`lattice-h-${r}-${c}`}
+                  style={{
+                    position: "absolute",
+                    left: `${10 + c * 20}%`,
+                    top: `${10 + r * 20}%`,
+                    width: "20%",
+                    height: 2,
+                    transform: "translateY(-50%)",
+                    background: "rgba(148, 163, 184, 0.45)",
+                    pointerEvents: "none",
+                  }}
+                />
+              ))
+            )}
+
+            {Array.from({ length: N }).flatMap((_, r) =>
+              Array.from({ length: N + 1 }).map((_, c) => (
+                <div
+                  key={`lattice-v-${r}-${c}`}
+                  style={{
+                    position: "absolute",
+                    left: `${10 + c * 20}%`,
+                    top: `${10 + r * 20}%`,
+                    width: 2,
+                    height: "20%",
+                    transform: "translateX(-50%)",
+                    background: "rgba(148, 163, 184, 0.45)",
+                    pointerEvents: "none",
+                  }}
+                />
+              ))
+            )}
+
             {Array.from({ length: N }).flatMap((_, r) =>
               Array.from({ length: N }).map((_, c) => {
                 const key = plaquetteKey(r, c);
@@ -560,17 +609,18 @@ export default function DecoderDuel() {
                       top: `${10 + r * 20}%`,
                       width: "18%",
                       height: "18%",
-                      border: active ? "2px solid #22c55e" : "1px solid #e2e8f0",
-                      background: active ? "#dcfce7" : "#f8fafc",
-                      borderRadius: 12,
+                      border: active ? "2px solid #16a34a" : "1px solid #cbd5e1",
+                      background: active ? "rgba(187, 247, 208, 0.95)" : "rgba(241, 245, 249, 0.82)",
+                      borderRadius: 0,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 12,
-                      color: "#64748b",
+                      color: active ? "#166534" : "#64748b",
+                      boxShadow: active ? "0 0 0 5px rgba(34, 197, 94, 0.18)" : "none",
                     }}
                   >
-                    {active ? "m" : ""}
+                    {active ? "B_p" : ""}
                   </div>
                 );
               })
@@ -586,21 +636,25 @@ export default function DecoderDuel() {
                   title={key}
                   style={{
                     position: "absolute",
-                    left: `${10 + c * 20}%`,
-                    top: `${7 + r * 20}%`,
-                    width: "18%",
-                    height: 10,
-                    borderRadius: 999,
-                    border: "none",
-                    color: "white",
-                    fontSize: 10,
+                    left: `${20 + c * 20}%`,
+                    top: `${10 + r * 20}%`,
+                    width: 34,
+                    height: 34,
+                    transform: "translate(-50%, -50%)",
+                    borderRadius: "50%",
+                    border: `2px solid ${op === "I" ? "#94a3b8" : edgeColor(op)}`,
+                    color: op === "I" ? "#475569" : "white",
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: "pointer",
-                    background: op === "I" ? "#cbd5e1" : edgeColor(op),
+                    background: op === "I" ? "rgba(255, 255, 255, 0.96)" : edgeColor(op),
                     outline: showDecoder && showPaths && suggestedTool ? `3px dashed ${suggestedTool === "Z" ? "#ef4444" : "#3b82f6"}` : "none",
                     outlineOffset: 2,
+                    zIndex: op !== "I" ? 3 : 2,
                   }}
-                />
+                >
+                  {op === "I" ? "" : op}
+                </button>
               );
             })}
 
@@ -614,21 +668,25 @@ export default function DecoderDuel() {
                   title={key}
                   style={{
                     position: "absolute",
-                    left: `${7 + c * 20}%`,
-                    top: `${10 + r * 20}%`,
-                    width: 10,
-                    height: "18%",
-                    borderRadius: 999,
-                    border: "none",
-                    color: "white",
-                    fontSize: 10,
+                    left: `${10 + c * 20}%`,
+                    top: `${20 + r * 20}%`,
+                    width: 34,
+                    height: 34,
+                    transform: "translate(-50%, -50%)",
+                    borderRadius: "50%",
+                    border: `2px solid ${op === "I" ? "#94a3b8" : edgeColor(op)}`,
+                    color: op === "I" ? "#475569" : "white",
+                    fontSize: 12,
                     fontWeight: 700,
                     cursor: "pointer",
-                    background: op === "I" ? "#cbd5e1" : edgeColor(op),
+                    background: op === "I" ? "rgba(255, 255, 255, 0.96)" : edgeColor(op),
                     outline: showDecoder && showPaths && suggestedTool ? `3px dashed ${suggestedTool === "Z" ? "#ef4444" : "#3b82f6"}` : "none",
                     outlineOffset: 2,
+                    zIndex: op !== "I" ? 3 : 2,
                   }}
-                />
+                >
+                  {op === "I" ? "" : op}
+                </button>
               );
             })}
 
@@ -643,23 +701,34 @@ export default function DecoderDuel() {
                       position: "absolute",
                       left: `${10 + c * 20}%`,
                       top: `${10 + r * 20}%`,
-                      width: 16,
-                      height: 16,
+                      width: 34,
+                      height: 34,
                       transform: "translate(-50%, -50%)",
-                      borderRadius: "50%",
-                      border: active ? "2px solid #eab308" : "2px solid #64748b",
-                      background: active ? "#fde047" : "white",
-                      boxShadow: active ? "0 0 10px rgba(234,179,8,0.35)" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: active ? "#854d0e" : "#94a3b8",
+                      fontSize: active ? 11 : 10,
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      background: active ? "rgba(254, 240, 138, 0.98)" : "transparent",
+                      borderRadius: active ? "50%" : 0,
+                      border: active ? "2px solid #f59e0b" : "none",
+                      boxShadow: active ? "0 0 0 7px rgba(234, 179, 8, 0.26), 0 0 24px rgba(245, 158, 11, 0.35)" : "none",
+                      pointerEvents: "none",
+                      zIndex: active ? 5 : 1,
                     }}
-                  />
+                  >
+                    {active ? "A_v" : "•"}
+                  </div>
                 );
               })
             )}
 
             {torus && (
-              <div style={{ position: "absolute", inset: 8, border: "2px dashed #c4b5fd", borderRadius: 16, pointerEvents: "none" }}>
-                <div style={{ position: "absolute", left: "50%", top: 4, transform: "translateX(-50%)", color: "#8b5cf6", fontSize: 12 }}>wraps top ↔ bottom</div>
-                <div style={{ position: "absolute", left: 4, top: "50%", transform: "translateY(-50%) rotate(-90deg)", color: "#8b5cf6", fontSize: 12 }}>wraps left ↔ right</div>
+              <div style={{ position: "absolute", inset: 10, border: "2px dashed #c4b5fd", borderRadius: 22, pointerEvents: "none" }}>
+                <div style={{ position: "absolute", left: "50%", top: 5, transform: "translateX(-50%)", color: "#7c3aed", fontSize: 12 }}>periodic: top ↔ bottom</div>
+                <div style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%) rotate(-90deg)", color: "#7c3aed", fontSize: 12 }}>periodic: left ↔ right</div>
               </div>
             )}
           </div>

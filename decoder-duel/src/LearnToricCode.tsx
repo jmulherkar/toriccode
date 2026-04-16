@@ -73,7 +73,7 @@ type CompletionContext = {
   logicalZLoop: string[];
 };
 
-function makeInitialState(message = "Follow the guided prompt to learn one idea at a time."): LearnState {
+function makeInitialState(message = "This question starts with a clear board. Use the prompt above to decide what to try."): LearnState {
   return {
     edges: {},
     vertexDefects: {},
@@ -86,21 +86,22 @@ function panelStyle(): React.CSSProperties {
   return {
     background: "white",
     border: "1px solid #d7e1ea",
-    borderRadius: 20,
-    padding: 18,
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.06)",
+    borderRadius: 24,
+    padding: 22,
+    boxShadow: "0 18px 45px rgba(15, 23, 42, 0.07)",
   };
 }
 
-function smallButton(active: boolean): React.CSSProperties {
+function smallButton(active: boolean, disabled = false): React.CSSProperties {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    border: `1px solid ${active ? "#0f172a" : "#cbd5e1"}`,
-    background: active ? "#0f172a" : "white",
-    color: active ? "white" : "#0f172a",
-    cursor: "pointer",
+    border: `1px solid ${disabled ? "#cbd5e1" : active ? "#0f172a" : "#cbd5e1"}`,
+    background: disabled ? "#f8fafc" : active ? "#0f172a" : "white",
+    color: disabled ? "#94a3b8" : active ? "white" : "#0f172a",
+    cursor: disabled ? "not-allowed" : "pointer",
     fontWeight: 600,
+    opacity: disabled ? 0.72 : 1,
   };
 }
 
@@ -212,21 +213,6 @@ function buildPlaquettePath(start: string, end: string, torus: boolean): string[
   }
 
   return path;
-}
-
-function vertexSupportEdges(key: string) {
-  const { r, c } = parseVertexKey(key);
-  const edges: string[] = [];
-  if (c > 0) edges.push(edgeKeyH(r, c - 1));
-  if (c < N) edges.push(edgeKeyH(r, c));
-  if (r > 0) edges.push(edgeKeyV(r - 1, c));
-  if (r < N) edges.push(edgeKeyV(r, c));
-  return edges;
-}
-
-function plaquetteSupportEdges(key: string) {
-  const { r, c } = parsePlaquetteKey(key);
-  return [edgeKeyH(r, c), edgeKeyV(r, c), edgeKeyH(r + 1, c), edgeKeyV(r, c + 1)];
 }
 
 function greedyPairing(keys: string[], pathBuilder: (a: string, b: string) => string[]) {
@@ -390,6 +376,75 @@ function allEdgesMatch(state: LearnState, edges: string[], op: Op) {
   return edges.every((edge) => (state.edges[edge] ?? "I") === op);
 }
 
+function hasAnyTwoEdgeZString(state: LearnState) {
+  for (let r = 0; r <= N; r += 1) {
+    for (let c = 0; c < N - 1; c += 1) {
+      if (allEdgesMatch(state, [edgeKeyH(r, c), edgeKeyH(r, c + 1)], "Z")) return true;
+    }
+  }
+
+  for (let r = 0; r < N - 1; r += 1) {
+    for (let c = 0; c <= N; c += 1) {
+      if (allEdgesMatch(state, [edgeKeyV(r, c), edgeKeyV(r + 1, c)], "Z")) return true;
+    }
+  }
+
+  return false;
+}
+
+function hasAnyPlaquetteZLoop(state: LearnState) {
+  for (let r = 0; r < N; r += 1) {
+    for (let c = 0; c < N; c += 1) {
+      if (
+        allEdgesMatch(
+          state,
+          [edgeKeyH(r, c), edgeKeyV(r, c), edgeKeyH(r + 1, c), edgeKeyV(r, c + 1)],
+          "Z",
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function latestActionSummary(
+  historyLine: string | undefined,
+  vertexCount: number,
+  plaquetteCount: number,
+) {
+  if (!historyLine) {
+    return "The board starts clear for each question. Use the prompt above to decide what to test, and this panel will interpret your latest move.";
+  }
+
+  const match = historyLine.match(/^Applied ([XYZ]) on /);
+  if (!match) {
+    return historyLine;
+  }
+
+  const appliedTool = match[1] as Tool;
+
+  if (appliedTool === "Z" && vertexCount === 2 && plaquetteCount === 0) {
+    return "Your latest Z move produced the expected star-channel syndrome: two vertex defects and no plaquette defects.";
+  }
+
+  if (appliedTool === "X" && vertexCount === 0 && plaquetteCount === 2) {
+    return "Your latest X move produced the expected plaquette-channel syndrome: two plaquette defects and no vertex defects.";
+  }
+
+  if (appliedTool === "Y" && vertexCount === 2 && plaquetteCount === 2) {
+    return "Your latest Y move lit up both channels at once, which is exactly the combined X-and-Z syndrome picture.";
+  }
+
+  if (vertexCount === 0 && plaquetteCount === 0) {
+    return "Your latest move left no visible syndrome. That usually means boundaries canceled, as in a closed loop or a reversed step.";
+  }
+
+  return `Your latest ${appliedTool} move leaves ${vertexCount} vertex defect(s) and ${plaquetteCount} plaquette defect(s) on the board.`;
+}
+
 function stepIsComplete(context: CompletionContext) {
   const { state, stepMoves, decoderActions, scenarioLoaded, everHadDefects, currentStep, quizPassed, logicalZLoop } = context;
   const vertexCount = countTrue(state.vertexDefects);
@@ -397,27 +452,33 @@ function stepIsComplete(context: CompletionContext) {
 
   switch (currentStep.id) {
     case "stabilizer-intro":
+    case "qubits-on-edges":
+    case "stars-vs-plaquettes":
+    case "commuting-intro":
+    case "commuting-star-plaquette":
+    case "commuting-same-family":
+    case "star-check-intro":
+    case "plaquette-check-intro":
+    case "string-intro":
+    case "loop-intro":
+    case "torus-intro":
+    case "decoder-intro":
+    case "decoder-ambiguity":
       return quizPassed;
     case "star-check":
       return quizPassed && stepMoves >= 1 && vertexCount === 2 && plaquetteCount === 0;
     case "plaquette-check":
       return quizPassed && stepMoves >= 1 && vertexCount === 0 && plaquetteCount === 2;
-    case "intro":
-      return quizPassed && stepMoves >= 1;
-    case "z-error":
-      return quizPassed && stepMoves >= 1 && vertexCount === 2 && plaquetteCount === 0;
-    case "x-error":
-      return quizPassed && stepMoves >= 1 && vertexCount === 0 && plaquetteCount === 2;
     case "y-error":
       return stepMoves >= 1 && vertexCount === 2 && plaquetteCount === 2;
     case "string":
-      return quizPassed && allEdgesMatch(state, [edgeKeyH(2, 1), edgeKeyH(2, 2)], "Z") && vertexCount === 2;
+      return hasAnyTwoEdgeZString(state) && vertexCount === 2;
     case "loop":
-      return allEdgesMatch(state, [edgeKeyH(1, 1), edgeKeyV(1, 1), edgeKeyH(2, 1), edgeKeyV(1, 2)], "Z") && vertexCount === 0;
+      return hasAnyPlaquetteZLoop(state) && vertexCount === 0;
     case "logical":
       return quizPassed && allEdgesMatch(state, logicalZLoop, "Z") && vertexCount === 0;
     case "decoder":
-      return quizPassed && decoderActions >= 1;
+      return decoderActions >= 1;
     case "capstone":
       return scenarioLoaded && everHadDefects && vertexCount + plaquetteCount === 0;
     default:
@@ -437,108 +498,17 @@ export default function LearnToricCode({
   moduleSubtitle = "A slow, interactive path from stabilizer intuition to topology-aware decoding.",
 }: LearnToricCodeProps) {
   const logicalZLoop = useMemo(() => Array.from({ length: N }, (_, c) => edgeKeyH(Math.floor(N / 2), c)), []);
-  const logicalXLoop = useMemo(() => Array.from({ length: N }, (_, r) => edgeKeyV(r, Math.floor(N / 2))), []);
 
   const courseSteps = useMemo<CourseStep[]>(
     () => [
       {
         id: "stabilizer-intro",
-        title: "1. Stabilizers First",
+        title: "1. Local Checks",
         headline: "The code is defined by local checks",
-        concept: "In the stabilizer formalism, we do not describe the toric code by listing every amplitude. Instead, we describe the allowed states by the commuting checks they satisfy. Star checks are X-type operators on the four edges touching a vertex, and plaquette checks are Z-type operators on the four edges around a face.",
-        task: "Answer the concept check, then inspect the highlighted star and plaquette supports on the board.",
-        hint: "Read the board as a map of constraints: yellow stars are X-type checks, green plaquettes are Z-type checks, and the code space is where all of them return +1.",
+        concept: "In the stabilizer formalism, we do not describe the toric code by listing every amplitude. Instead, we describe the allowed states by the commuting checks they satisfy. Star checks are X-type operators on the four edges touching a vertex, and plaquette checks are Z-type operators on the four edges around a face. Later, X and Z edge errors will disturb different check families, but the code space itself is defined by all of these local constraints together.",
+        task: "Use the empty board as a map: look at the highlighted star and plaquette operators before answering the opening question.",
+        hint: "Read the board as a map of constraints: yellow stars are X-type checks, green plaquettes are Z-type checks, and X or Z edge errors will later show up by violating one of these families.",
         success: "You’ve got the central viewpoint in place: the toric code is a lattice of stabilizer constraints.",
-        scenario: "empty",
-        defaultTool: "Z",
-        allowedTools: [],
-        interactionMode: "focus",
-        torus: false,
-        showDecoder: false,
-        showLogicalX: false,
-        showLogicalZ: false,
-        formula: "A_v = product of X on the four incident edges,   B_p = product of Z on the four boundary edges",
-        visualTakeaway: "The highlighted edges are not random geometry. They are the qubits multiplied together by one stabilizer generator.",
-        highlightVertices: [vertexKey(2, 2)],
-        highlightPlaquettes: [plaquetteKey(1, 1)],
-        quiz: {
-          prompt: "In this app, what do the star and plaquette markers represent?",
-          correct: "checks",
-          options: [
-            { id: "checks", label: "Local stabilizer checks", explanation: "Right. They are the commuting X-type and Z-type operators that define the code space." },
-            { id: "qubits", label: "Physical qubits", explanation: "The physical qubits live on the edges, not on the stars or plaquettes." },
-            { id: "decoder-paths", label: "Decoder path markers", explanation: "Decoder paths are suggested later. These markers are the checks the decoder reads out." },
-          ],
-        },
-      },
-      {
-        id: "star-check",
-        title: "2. Star Checks React to Z Errors",
-        headline: "A Z on one edge flips adjacent star outcomes",
-        concept: "A star stabilizer is an X-type operator. A Z error anticommutes with X on the same qubit, so the star checks touching that edge flip from +1 to -1. This is the stabilizer explanation behind the yellow defect pair.",
-        task: "Answer the check, then place a Z on the highlighted edge and watch the neighboring star syndromes appear.",
-        hint: "Only the two star checks that share that edge should react. The plaquette channel stays quiet here.",
-        success: "You’ve linked the visible syndrome pattern to the stabilizer rule behind it.",
-        scenario: "empty",
-        defaultTool: "Z",
-        allowedTools: ["Z"],
-        interactionMode: "focus",
-        focusEdges: [edgeKeyH(1, 1)],
-        torus: false,
-        showDecoder: false,
-        showLogicalX: false,
-        showLogicalZ: false,
-        formula: "Z anticommutes with the neighboring X-type star checks, so those measurement signs flip",
-        visualTakeaway: "The yellow pair is the footprint of one violated stabilizer family, not a direct picture of the hidden quantum state.",
-        highlightVertices: [vertexKey(1, 1), vertexKey(1, 2)],
-        quiz: {
-          prompt: "Why do the two nearby star checks flip after a Z error on one edge?",
-          correct: "anticommutes",
-          options: [
-            { id: "anticommutes", label: "Because Z anticommutes with those X-type checks", explanation: "Exactly. The star generators touching that edge change sign because the local Pauli operators anticommute." },
-            { id: "same-pauli", label: "Because they use the same Z operator", explanation: "Not here. The star checks are X-type, which is why Z disturbs them." },
-            { id: "decoder", label: "Because the decoder chooses them", explanation: "The syndrome appears before any decoder acts. It comes from the stabilizer measurements themselves." },
-          ],
-        },
-      },
-      {
-        id: "plaquette-check",
-        title: "3. Plaquette Checks React to X Errors",
-        headline: "An X on one edge flips adjacent plaquette outcomes",
-        concept: "A plaquette stabilizer is a Z-type operator around one face. An X error anticommutes with the neighboring plaquette checks, so those faces report a nontrivial syndrome. This is the dual channel to the star-check story.",
-        task: "Answer the check, then place an X on the highlighted edge and look for the two green plaquette defects.",
-        hint: "The same visual rule applies: one edge error is seen through the local checks that touch it and anticommute with it.",
-        success: "You’ve now seen both stabilizer channels that the toric code uses for detection.",
-        scenario: "empty",
-        defaultTool: "X",
-        allowedTools: ["X"],
-        interactionMode: "focus",
-        focusEdges: [edgeKeyV(1, 2)],
-        torus: false,
-        showDecoder: false,
-        showLogicalX: false,
-        showLogicalZ: false,
-        formula: "X anticommutes with the neighboring Z-type plaquette checks, so those measurement signs flip",
-        visualTakeaway: "Green plaquette defects are violated Z-type stabilizers, just as yellow vertex defects are violated X-type stabilizers.",
-        highlightPlaquettes: [plaquetteKey(1, 1), plaquetteKey(1, 2)],
-        quiz: {
-          prompt: "What is the green plaquette pair really showing you?",
-          correct: "violated-z",
-          options: [
-            { id: "violated-z", label: "Two violated Z-type stabilizers", explanation: "Correct. The plaquette syndromes are the measured checks that changed sign." },
-            { id: "x-string", label: "The full X string itself", explanation: "Not directly. The stabilizer readout only exposes the boundary syndrome." },
-            { id: "logical-loop", label: "A logical operator", explanation: "A single local X error is detectable and not a logical loop by itself." },
-          ],
-        },
-      },
-      {
-        id: "intro",
-        title: "4. Lattice Orientation",
-        headline: "Qubits live on edges",
-        concept: "In the stabilizer formalism, we describe the code through commuting multi-qubit Pauli checks. The data qubits sit on edges, while the vertices and plaquettes track the code's local symmetries.",
-        task: "Answer the quick check, then click the glowing edge once.",
-        hint: "This follows the lattice picture from the toric-code notes: edges carry qubits, and nearby checks report whether a local symmetry has been disturbed.",
-        success: "You have the basic geometry in place: qubits on edges, symmetry checks around them.",
         scenario: "empty",
         defaultTool: "Z",
         allowedTools: ["Z"],
@@ -548,78 +518,274 @@ export default function LearnToricCode({
         showDecoder: false,
         showLogicalX: false,
         showLogicalZ: false,
+        formula: "A_v = product of X on the four incident edges,   B_p = product of Z on the four boundary edges",
+        visualTakeaway: "The highlighted edges are the qubits multiplied together by one stabilizer generator.",
+        highlightVertices: [vertexKey(2, 2)],
+        highlightPlaquettes: [plaquetteKey(1, 1)],
         quiz: {
-          prompt: "Where does the toric code place its physical qubits in this lattice view?",
-          correct: "edges",
+          prompt: "In this app, what do the star and plaquette markers represent before we start applying X or Z errors?",
+          correct: "checks",
           options: [
-            { id: "edges", label: "On the edges", explanation: "Right. The code is described by checks on vertices and plaquettes, but the physical qubits themselves live on edges." },
-            { id: "vertices", label: "On the vertices", explanation: "Not in this toric-code layout. Vertices host one family of stabilizer checks." },
-            { id: "plaquettes", label: "At the center of plaquettes", explanation: "Not here. Plaquettes host the other family of stabilizer checks." },
+            { id: "checks", label: "Local stabilizer checks", explanation: "Right. They are the commuting X-type and Z-type operators that define the code space." },
+            { id: "qubits", label: "Physical qubits", explanation: "The physical qubits live on the edges, not on the stars or plaquettes." },
+            { id: "decoder-paths", label: "Decoder path markers", explanation: "Decoder paths appear later. These markers are the checks the decoder reads out." },
           ],
         },
       },
       {
-        id: "z-error",
-        title: "5. Z Error Syndromes",
-        headline: "A Z error flips nearby vertex checks",
-        concept: "Error detection comes from measuring symmetries of the state rather than individual qubits. A single Z fault anticommutes with the adjacent X-type vertex checks, so their measurement outcomes flip.",
-        task: "Answer the check, then apply a Z on the highlighted edge and inspect the yellow endpoints.",
-        hint: "Look for a pair of -1 syndrome outcomes on the neighboring vertex checks, with no plaquette response.",
-        success: "You’ve seen how a local Z error shows up through nearby symmetry measurements.",
+        id: "qubits-on-edges",
+        title: "2. Qubits On Edges",
+        headline: "The data qubits live on the lattice edges",
+        concept: "The toric code uses the lattice in a very specific way. Vertices and plaquettes are not qubits. They are where we read the stabilizer checks. The actual physical qubits live on the edges between them.",
+        task: "On the empty board, compare the edge qubits with the vertex and plaquette operators before answering.",
+        hint: "Ask which objects can actually carry X, Z, or Y faults in this picture, and which ones only measure them.",
+        success: "You’ve separated the data qubits from the places where the syndrome is measured.",
         scenario: "empty",
         defaultTool: "Z",
         allowedTools: ["Z"],
         interactionMode: "focus",
-        focusEdges: [edgeKeyH(1, 1)],
+        focusEdges: [edgeKeyH(2, 1)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        highlightVertices: [vertexKey(2, 2)],
+        highlightPlaquettes: [plaquetteKey(1, 1)],
+        quiz: {
+          prompt: "Where are the physical qubits in this lattice model?",
+          correct: "edges",
+          options: [
+            { id: "edges", label: "On the edges", explanation: "Right. The edges carry the qubits, while vertices and plaquettes host the checks." },
+            { id: "vertices", label: "On the vertices", explanation: "Not in this toric-code layout. Vertices mark one family of stabilizer checks." },
+            { id: "plaquettes", label: "Inside the plaquettes", explanation: "Not here. Plaquettes are where the Z-type checks are measured." },
+          ],
+        },
+      },
+      {
+        id: "stars-vs-plaquettes",
+        title: "3. Two Check Families",
+        headline: "Stars and plaquettes play different stabilizer roles",
+        concept: "The toric code uses two complementary families of local checks. Star checks are X-type operators associated with vertices. Plaquette checks are Z-type operators associated with faces. Together they define the protected code space.",
+        task: "On the empty board, compare one star and one plaquette operator, then answer the check.",
+        hint: "Yellow and green markers are not decorative. They stand for different Pauli-type checks acting on different local edge sets.",
+        success: "You’ve got the two stabilizer families straight before we start injecting errors.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["X", "Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(2, 1), edgeKeyV(1, 2)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "A_v uses X operators on edges meeting at a vertex, while B_p uses Z operators on edges around a plaquette",
+        highlightVertices: [vertexKey(2, 2)],
+        highlightPlaquettes: [plaquetteKey(1, 1)],
+        quiz: {
+          prompt: "Which statement best matches the toric code checks in this lesson?",
+          correct: "x-z-families",
+          options: [
+            { id: "x-z-families", label: "Stars are X-type checks and plaquettes are Z-type checks", explanation: "Correct. That is the core local stabilizer structure of the toric code." },
+            { id: "same-type", label: "Stars and plaquettes are both the same kind of check", explanation: "No. The point is that the code uses two complementary Pauli-type check families." },
+            { id: "logical-only", label: "Stars and plaquettes are logical operators, not stabilizers", explanation: "No. They are local stabilizer generators." },
+          ],
+        },
+      },
+      {
+        id: "commuting-intro",
+        title: "4. Why The Checks Can Coexist",
+        headline: "The toric-code stabilizers commute with each other",
+        concept: "A quantum code cannot be defined by incompatible measurements. The toric code works because its local star and plaquette operators commute, so the code space can be the shared +1 eigenspace of all of them at once.",
+        task: "Use the empty board to inspect a highlighted star and plaquette pair, then answer why the code needs them to commute.",
+        hint: "A good way to check is to look at where the two operators overlap on the board and ask whether they could produce an odd or even number of XZ sign flips.",
+        success: "You’ve connected commutation to the existence of one consistent toric-code subspace.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(1, 1), edgeKeyV(1, 2)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "[A_v, B_p] = 0 for all star and plaquette generators in the toric code",
+        visualTakeaway: "The highlighted local checks are not fighting each other. They are compatible constraints on the same encoded state.",
+        highlightVertices: [vertexKey(2, 2)],
+        highlightPlaquettes: [plaquetteKey(1, 1)],
+        quiz: {
+          prompt: "Why is it important that toric-code stabilizer generators commute?",
+          correct: "shared-code-space",
+          options: [
+            { id: "shared-code-space", label: "So they can define one shared code space together", explanation: "Correct. Commuting checks can be measured consistently and share a joint eigenspace." },
+            { id: "faster-decoder", label: "So the decoder runs faster on the lattice", explanation: "No. The main reason is physical and algebraic compatibility, not decoder speed." },
+            { id: "more-qubits", label: "So the code can place more qubits on the edges", explanation: "No. Edge placement is geometric; commutation is about compatible stabilizer measurements." },
+          ],
+        },
+      },
+      {
+        id: "commuting-star-plaquette",
+        title: "5. Star-Plaquette Commutation",
+        headline: "A star and a plaquette commute because their overlap is even",
+        concept: "A neighboring star and plaquette do not usually overlap on just one edge. On the square lattice they either do not overlap at all, or they share two edges. Each shared edge contributes one XZ anticommutation, and two minus signs cancel to give overall commutation.",
+        task: "On the empty board, inspect the highlighted star and plaquette and count how many edge qubits they share before answering.",
+        hint: "A practical check is: count the shared edge qubits. One shared XZ pair would anticommute, but two shared XZ pairs give two sign flips, which multiply back to +1.",
+        success: "You’ve seen the key local reason that star and plaquette operators commute on the toric lattice.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["X", "Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(1, 1), edgeKeyV(1, 2)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "Two shared XZ anticommutations => (-1) x (-1) = +1",
+        visualTakeaway: "The board highlights the even-overlap geometry that makes a star and neighboring plaquette compatible checks.",
+        highlightVertices: [vertexKey(1, 2)],
+        highlightPlaquettes: [plaquetteKey(1, 1)],
+        quiz: {
+          prompt: "Why does a star operator commute with a neighboring plaquette operator?",
+          correct: "two-overlaps",
+          options: [
+            { id: "two-overlaps", label: "Because they overlap on two edges, so the two anticommutations cancel", explanation: "Exactly. The even number of shared XZ pairs makes the overall sign come back to +1." },
+            { id: "same-pauli", label: "Because both operators use the same Pauli on every shared qubit", explanation: "No. The star is X-type and the plaquette is Z-type on shared edges." },
+            { id: "decoder-fixes", label: "Because the decoder enforces commutation after measurement", explanation: "No. The operators commute as part of the code definition before any decoder is involved." },
+          ],
+        },
+      },
+      {
+        id: "commuting-same-family",
+        title: "6. Same-Family Checks Also Commute",
+        headline: "Stars commute with stars, and plaquettes commute with plaquettes",
+        concept: "Checks in the same family are even simpler. Two stars only use X operators, and two plaquettes only use Z operators. Whether they are disjoint or share an edge, they still commute because there is no mixed XZ conflict on the overlap.",
+        task: "Use the empty board to compare two nearby checks from the same family, then answer the check.",
+        hint: "A practical check is to ask what Pauli type each operator uses on any shared edge. Same-type overlap does not create an anticommutation sign flip.",
+        success: "You’ve completed the commutation picture: same-family checks commute directly, and star-plaquette pairs commute by even overlap.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["X", "Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(2, 1), edgeKeyV(2, 2)],
         torus: false,
         showDecoder: false,
         showLogicalX: false,
         showLogicalZ: false,
         quiz: {
-          prompt: "Which checks flip sign when you place a Z on one edge in this simulator?",
-          correct: "vertex",
+          prompt: "Why do two star operators commute with each other?",
+          correct: "same-pauli-family",
           options: [
-            { id: "vertex", label: "The adjacent vertex checks", explanation: "Correct. The Z error anticommutes with the X-type vertex or star checks that touch that edge." },
-            { id: "plaquette", label: "The adjacent plaquette checks", explanation: "That is the complementary pattern for X-type faults in this model." },
-            { id: "both", label: "Both kinds of checks", explanation: "Only a Y fault triggers both syndrome channels here." },
+            { id: "same-pauli-family", label: "Because they use the same Pauli type on any shared edge", explanation: "Correct. Shared X with X commutes, just as shared Z with Z commutes for plaquettes." },
+            { id: "never-overlap", label: "Because two stars never share an edge", explanation: "Not always. Neighboring stars can share one edge, but they still commute." },
+            { id: "logical-loop", label: "Because all star operators are actually logical loops", explanation: "No. Stars are local stabilizer generators, not logical loops." },
           ],
         },
       },
       {
-        id: "x-error",
-        title: "6. X Error Syndromes",
-        headline: "An X error flips nearby plaquette checks",
-        concept: "The complementary detection channel now appears. An X fault anticommutes with the neighboring Z-type plaquette checks, so the syndrome moves onto faces instead of vertices.",
-        task: "Answer the check, then apply an X on the glowing edge and look for the green plaquette pair.",
-        hint: "This is the dual picture from the surface-code viewpoint: the face checks, not the vertex checks, should flip.",
-        success: "You’ve separated the two basic syndrome channels used throughout the stabilizer formalism.",
+        id: "star-check-intro",
+        title: "7. Z Errors And Star Checks",
+        headline: "A Z error shows up in the star channel",
+        concept: "A star stabilizer is X-type. A Z on one edge anticommutes with the two star checks that touch that edge, so those two measurement outcomes flip from +1 to -1.",
+        task: "Starting from the empty board, try a Z error anywhere and watch which vertex checks react before answering.",
+        hint: "The crucial local rule is X versus Z anticommutation on the same qubit.",
+        success: "You’ve connected a single Z fault to the star-check syndrome channel.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "free",
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "A Z edge error flips the two neighboring X-type star checks",
+        visualTakeaway: "A local fault is seen through the checks it anticommutes with, not by directly reading out the hidden state.",
+        highlightVertices: [vertexKey(1, 1), vertexKey(1, 2)],
+        quiz: {
+          prompt: "Why do nearby star checks react to a Z error on one edge?",
+          correct: "anticommutes",
+          options: [
+            { id: "anticommutes", label: "Because the Z error anticommutes with the X-type star checks that touch that edge", explanation: "Exactly. The sign flips because the local Pauli operators anticommute." },
+            { id: "same-pauli", label: "Because the star checks are also Z operators", explanation: "No. Star checks are X-type in this picture." },
+            { id: "decoder", label: "Because the decoder marks those stars for us", explanation: "No. The syndrome appears before any decoder is used." },
+          ],
+        },
+      },
+      {
+        id: "star-check",
+        title: "8. Make The Star Syndrome Appear",
+        headline: "A single Z creates a pair of vertex defects",
+        concept: "Now we use the board directly. Any single local Z on an edge should create two nearby yellow star defects and leave the plaquette channel quiet.",
+        task: "Place a Z on any edge and check that exactly two vertex defects appear.",
+        hint: "Only the two star checks sharing the chosen edge should flip. You should not see green plaquette defects here.",
+        success: "You’ve seen the star-channel syndrome on the board, not just in words.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "free",
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "Z anticommutes with the neighboring X-type star checks, so those measurement signs flip",
+        visualTakeaway: "The yellow pair is the footprint of one violated stabilizer family, not a direct picture of the hidden quantum state.",
+        highlightVertices: [vertexKey(1, 1), vertexKey(1, 2)],
+      },
+      {
+        id: "plaquette-check-intro",
+        title: "9. X Errors And Plaquette Checks",
+        headline: "An X error shows up in the plaquette channel",
+        concept: "The toric code has a complementary syndrome story. A plaquette stabilizer is Z-type, so an X on one edge flips the neighboring plaquette checks instead of the star checks.",
+        task: "Starting from the empty board, try an X error anywhere and watch which plaquette checks react before answering.",
+        hint: "This is the dual of the previous step: now it is X versus Z anticommutation that matters.",
+        success: "You’ve connected the other local Pauli channel to the plaquette syndrome picture.",
         scenario: "empty",
         defaultTool: "X",
         allowedTools: ["X"],
-        interactionMode: "focus",
-        focusEdges: [edgeKeyV(1, 2)],
+        interactionMode: "free",
         torus: false,
         showDecoder: false,
         showLogicalX: false,
         showLogicalZ: false,
+        formula: "An X edge error flips the two neighboring Z-type plaquette checks",
+        visualTakeaway: "The toric code diagnoses X and Z faults through different stabilizer families.",
+        highlightPlaquettes: [plaquetteKey(1, 1), plaquetteKey(1, 2)],
         quiz: {
-          prompt: "What should you expect after one isolated X error?",
-          correct: "plaquette-pair",
+          prompt: "Which stabilizer family reacts to a single X fault on one edge?",
+          correct: "plaquettes",
           options: [
-            { id: "plaquette-pair", label: "Two plaquette defects", explanation: "Exactly. The neighboring plaquette checks acquire the nontrivial syndrome." },
-            { id: "vertex-pair", label: "Two vertex defects", explanation: "That is the signature of a Z fault, not an X fault, in this picture." },
-            { id: "none", label: "No visible defect", explanation: "A single isolated X error is detectable by the stabilizer checks." },
+            { id: "plaquettes", label: "The neighboring plaquette checks", explanation: "Correct. X anticommutes with the Z-type plaquette stabilizers that touch that edge." },
+            { id: "stars", label: "The neighboring star checks", explanation: "That is the Z-error pattern, not the X-error pattern." },
+            { id: "both", label: "Both star and plaquette checks equally", explanation: "Not for a pure X fault. That broader response is associated with Y." },
           ],
         },
       },
       {
+        id: "plaquette-check",
+        title: "10. Make The Plaquette Syndrome Appear",
+        headline: "An X on one edge flips adjacent plaquette outcomes",
+        concept: "A plaquette stabilizer is a Z-type operator around one face. An X error anticommutes with the neighboring plaquette checks, so those faces report a nontrivial syndrome. This is the dual channel to the star-check story.",
+        task: "Place an X on any edge and check that exactly two green plaquette defects appear.",
+        hint: "The same visual rule applies: one edge error is seen through the local checks that touch it and anticommute with it.",
+        success: "You’ve now seen both stabilizer channels that the toric code uses for detection.",
+        scenario: "empty",
+        defaultTool: "X",
+        allowedTools: ["X"],
+        interactionMode: "free",
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "X anticommutes with the neighboring Z-type plaquette checks, so those measurement signs flip",
+        visualTakeaway: "Green plaquette defects are violated Z-type stabilizers, just as yellow vertex defects are violated X-type stabilizers.",
+        highlightPlaquettes: [plaquetteKey(1, 1), plaquetteKey(1, 2)],
+      },
+      {
         id: "y-error",
-        title: "7. Y Combines Both Channels",
-        headline: "Y carries X and Z together",
-        concept: "The Pauli operators form the language of the code, and Y combines the effects of X and Z. In syndrome language, that means one local Y fault excites both the vertex and plaquette channels at once.",
-        task: "Apply a Y on the highlighted edge and compare both defect types at once.",
-        hint: "This is the visible version of the Pauli-group rule Y ~ XZ: both kinds of local checks respond.",
-        success: "You’ve connected Pauli algebra to the combined syndrome picture used in the notes.",
+        title: "11. Y Touches Both Channels",
+        headline: "Y combines the X and Z syndrome stories",
+        concept: "The Pauli operator Y combines X and Z behavior. On the lattice, that means a single Y fault excites both the vertex-defect and plaquette-defect channels at once.",
+        task: "Apply a Y on the highlighted edge and compare both defect families at the same time.",
+        hint: "Think of Y as carrying both X-like and Z-like effects locally.",
+        success: "You’ve linked Pauli algebra to the combined syndrome picture on the lattice.",
         scenario: "empty",
         defaultTool: "Y",
         allowedTools: ["Y"],
@@ -631,13 +797,13 @@ export default function LearnToricCode({
         showLogicalZ: false,
       },
       {
-        id: "string",
-        title: "8. Strings Hide Their Interior",
-        headline: "Only string endpoints stay visible",
-        concept: "Products of local Pauli errors form string operators. In the homological picture emphasized in the toric-code notes, the interior check flips cancel pairwise, so only the boundary of the string remains visible.",
-        task: "Answer the check, then extend the prepared red string by clicking the second glowing edge.",
-        hint: "Watch the shared middle vertex: once the string continues through it, the two flips cancel and only the endpoints remain.",
-        success: "That is the core topological-code picture: the syndrome reveals the boundary, not the whole error chain.",
+        id: "string-intro",
+        title: "12. Strings Create Boundaries",
+        headline: "The syndrome only sees the ends of a string",
+        concept: "A longer Z string does not create a defect at every edge. Instead, adjacent interior checks cancel in pairs, so only the endpoints remain visible in the star syndrome.",
+        task: "Starting from the clear board, draw a short Z string and compare its visible defects with the hidden interior before answering.",
+        hint: "Try placing Z on two adjacent edges. The board begins empty here, so the defect pattern you see is entirely the boundary of the string you create.",
+        success: "You’re ready to read defect pairs as string endpoints rather than isolated accidents.",
         scenario: "single_z",
         defaultTool: "Z",
         allowedTools: ["Z"],
@@ -647,24 +813,71 @@ export default function LearnToricCode({
         showDecoder: false,
         showLogicalX: false,
         showLogicalZ: false,
+        formula: "Interior syndrome cancellations leave only the boundary of a string visible",
         quiz: {
-          prompt: "When you extend a Z string by one more adjacent edge, what happens to the shared middle defect?",
-          correct: "cancel",
+          prompt: "What does the toric-code syndrome reveal about a short string error?",
+          correct: "boundary",
           options: [
-            { id: "cancel", label: "It cancels out", explanation: "Right. The shared check is flipped twice, so the interior syndrome disappears and only the boundary remains." },
-            { id: "double", label: "It doubles in strength", explanation: "The syndrome is a parity signal, so a second flip cancels the first rather than strengthening it." },
-            { id: "moves-to-face", label: "It moves to a plaquette", explanation: "The defect does not change type here; the interior vertex excitation simply cancels." },
+            { id: "boundary", label: "Its boundary endpoints, not every interior edge", explanation: "Correct. The syndrome marks where the string begins and ends as seen by violated checks." },
+            { id: "full-path", label: "The full path of every edge in the string", explanation: "No. The interior is largely hidden by stabilizer cancellations." },
+            { id: "logical-value", label: "The encoded logical bit directly", explanation: "No. The syndrome reveals check violations, not the logical state." },
+          ],
+        },
+      },
+      {
+        id: "string",
+        title: "13. Extend A String",
+        headline: "Strings hide their interior",
+        concept: "Now you can watch the boundary picture happen. Extending a Z string by one more edge should move an endpoint rather than leave a visible defect in the interior.",
+        task: "Starting from the clear board, build a short Z string on the highlighted path and watch the interior cancel while the endpoint moves.",
+        hint: "Place Z on two adjacent highlighted edges. The important visual change is that the shared interior defect disappears while the outer endpoints remain.",
+        success: "You’ve seen a boundary move without turning the entire string into visible syndrome.",
+        scenario: "single_z",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(2, 2)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+      },
+      {
+        id: "loop-intro",
+        title: "14. Closed Loops Have No Boundary",
+        headline: "A contractible loop can erase its own syndrome",
+        concept: "If a string closes into a small loop, it has no endpoints. In stabilizer language, a contractible closed loop is built from local checks and therefore creates no syndrome even though several edges are involved.",
+        task: "Starting from the empty board, try closing a small Z loop and watch what happens to the syndrome before answering.",
+        hint: "No boundary means no visible defect endpoints to mark. You can test that by completing a little square loop.",
+        success: "You’ve connected the absence of syndrome to the closed-loop picture.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(1, 1), edgeKeyV(1, 1), edgeKeyH(2, 1), edgeKeyV(1, 2)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "Contractible closed loops are stabilizer-generated and therefore syndrome-free",
+        quiz: {
+          prompt: "Why can a small contractible loop create no visible syndrome?",
+          correct: "no-boundary",
+          options: [
+            { id: "no-boundary", label: "Because the loop has no boundary endpoints left over", explanation: "Correct. Without endpoints, the local syndrome cancels away." },
+            { id: "wrong-tool", label: "Because loops are not made from Pauli operators", explanation: "No. The loop is still made from edge Pauli operations." },
+            { id: "decoder-hides", label: "Because the decoder automatically hides the defects", explanation: "No. The absence of syndrome is a property of the loop itself." },
           ],
         },
       },
       {
         id: "loop",
-        title: "9. Closed Loops Are Stabilizers",
-        headline: "Contractible loops leave no syndrome",
-        concept: "A contractible closed loop can be built from local stabilizer generators. Because it has no boundary, it creates no syndrome even though it is assembled from many local edge operations.",
-        task: "Paint the four glowing edges with Z to close a small loop around one plaquette.",
-        hint: "Each edge flips two nearby checks, but a closed contractible loop leaves every touched vertex with even parity.",
-        success: "You just built a contractible stabilizer loop with no detectable boundary.",
+        title: "15. Build A Contractible Loop",
+        headline: "A small loop is locally invisible",
+        concept: "Build the little four-edge Z loop and watch the vertex defects disappear entirely. This is the board-level version of a contractible stabilizer loop.",
+        task: "Draw the highlighted four-edge Z loop and verify that the vertex syndrome returns to zero.",
+        hint: "You are closing a path, not extending it. The final edge should erase the remaining boundary.",
+        success: "You just built a contractible loop with no visible boundary syndrome.",
         scenario: "empty",
         defaultTool: "Z",
         allowedTools: ["Z"],
@@ -676,13 +889,40 @@ export default function LearnToricCode({
         showLogicalZ: false,
       },
       {
+        id: "torus-intro",
+        title: "16. Wrapping Changes The Story",
+        headline: "On a torus, some closed loops cannot shrink away",
+        concept: "When opposite boundaries are identified, the lattice becomes topologically different. A loop that wraps all the way around the torus has no local boundary, yet it may still act nontrivially on the encoded information.",
+        task: "Use the empty torus board and the highlighted logical directions to think about wrapped loops before answering.",
+        hint: "The key new idea is that 'no syndrome' does not always mean 'trivial action.' A wrapped loop can still matter logically.",
+        success: "You’re ready to separate local invisibility from logical triviality.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "focus",
+        focusEdges: [logicalZLoop[0], logicalZLoop[1]],
+        torus: true,
+        showDecoder: false,
+        showLogicalX: true,
+        showLogicalZ: true,
+        quiz: {
+          prompt: "What changes when we move from a planar patch to a torus?",
+          correct: "noncontractible",
+          options: [
+            { id: "noncontractible", label: "Some closed loops can wrap around and fail to contract to a point", explanation: "Correct. Those wrapped loops are the topological feature that matters here." },
+            { id: "no-stabilizers", label: "The stabilizer checks disappear", explanation: "No. The toric code still has local star and plaquette checks." },
+            { id: "qubits-move", label: "The qubits move off the edges", explanation: "No. The geometric placement of qubits on edges stays the same in this model." },
+          ],
+        },
+      },
+      {
         id: "logical",
-        title: "10. Topology Creates Logical Qubits",
-        headline: "A non-contractible loop acts logically",
-        concept: "On a torus, some closed loops are non-contractible. Browne's notes frame these global cycles as the origin of encoded qubits: they preserve all local checks while acting nontrivially on the logical subspace.",
-        task: "Answer the check, then paint the full red loop across the torus.",
-        hint: "Because the boundaries are identified, the loop closes through the periodic wrap and cannot be shrunk to a point.",
-        success: "You’ve reached the topological idea behind logical operators: no local syndrome, but a nontrivial global action.",
+        title: "17. Non-Contractible Loops Are Logical",
+        headline: "A wrapped loop can preserve the syndrome but still matter logically",
+        concept: "A Z loop around the torus can commute with the stabilizers and create no local defects, yet still act nontrivially on the encoded space. This is the topological origin of logical operators in the toric code.",
+        task: "Answer the question, then complete the highlighted non-contractible Z loop.",
+        hint: "Compare this to the earlier small loop. Both can be syndrome-free, but only one wraps around the torus.",
+        success: "You’ve seen the distinction between a harmless local loop and a logical loop around the torus.",
         scenario: "empty",
         defaultTool: "Z",
         allowedTools: ["Z"],
@@ -690,27 +930,53 @@ export default function LearnToricCode({
         focusEdges: logicalZLoop,
         torus: true,
         showDecoder: false,
-        showLogicalX: true,
+        showLogicalX: false,
         showLogicalZ: true,
         quiz: {
-          prompt: "Why is this torus-spanning loop different from the small loop in the previous step?",
-          correct: "non-contractible",
+          prompt: "Why is a non-contractible loop logically important even when the syndrome is zero?",
+          correct: "changes-encoded",
           options: [
-            { id: "non-contractible", label: "It cannot shrink to a point", explanation: "Exactly. The loop's homology class, not its local appearance, is what lets it act as a logical operator." },
-            { id: "more-edges", label: "It uses more edges", explanation: "Length is not the key point. A longer contractible loop would still be topologically trivial." },
-            { id: "contains-y", label: "It secretly contains Y operators", explanation: "No. The difference is topological, not a hidden change in Pauli type." },
+            { id: "changes-encoded", label: "Because it can act nontrivially on the encoded state while remaining locally syndrome-free", explanation: "Exactly. This is the topological logical-operator idea." },
+            { id: "hidden-pauli", label: "Because it secretly changes X into Z on every edge", explanation: "No. The issue is topological action on the code space, not a hidden Pauli-type conversion." },
+            { id: "decoder-only", label: "Because the decoder labels it logical by convention", explanation: "No. Its logical significance comes from the torus topology itself." },
+          ],
+        },
+      },
+      {
+        id: "decoder-intro",
+        title: "18. What The Decoder Sees",
+        headline: "The decoder works from the syndrome, not the hidden state",
+        concept: "Error correction in the toric code starts from the observed defect pattern. The decoder sees violated checks, pairs them, and proposes recovery strings without ever directly accessing the encoded logical information.",
+        task: "Starting from the clear board, think about what information a decoder would get after errors create defects, then answer.",
+        hint: "Even though the board begins empty, the decoder's job is still defined by the defect pattern and code geometry, not the exact historical error path or the hidden logical state.",
+        success: "You’ve got the right starting point for understanding toric-code decoding.",
+        scenario: "mixed",
+        defaultTool: "Z",
+        allowedTools: [],
+        interactionMode: "decoder_only",
+        torus: true,
+        showDecoder: true,
+        showLogicalX: false,
+        showLogicalZ: false,
+        quiz: {
+          prompt: "What information does the decoder fundamentally use here?",
+          correct: "syndrome",
+          options: [
+            { id: "syndrome", label: "The observed syndrome defects and the code geometry", explanation: "Correct. The decoder uses the measured defect pattern to infer a likely recovery." },
+            { id: "true-error", label: "The exact original error string", explanation: "No. If we knew that directly, decoding would not be necessary." },
+            { id: "logical-state", label: "The hidden logical qubit value", explanation: "No. Directly measuring the logical state would defeat the point of error correction." },
           ],
         },
       },
       {
         id: "decoder",
-        title: "11. Decoding Uses the Syndrome Only",
-        headline: "A decoder pairs defects and proposes recovery strings",
-        concept: "Error correction is inferred from syndrome data alone. The decoder sees where the local checks were violated, proposes a recovery string, and hopes that its homology class matches the original fault.",
-        task: "Answer the check, then apply the first suggested decoder step.",
-        hint: "This mirrors the notes: we do not measure the encoded state directly. We only read out the syndrome and infer a likely correction.",
-        success: "You’ve connected symmetry measurements to an actual decoding rule.",
-        scenario: "mixed",
+        title: "19. Apply A Decoder Step",
+        headline: "A decoder proposes a recovery path from the defects",
+        concept: "Now the decoder suggestions are visible. The proposed moves connect syndrome defects in a way that is consistent with the chosen decoding rule, such as greedy pairing or minimum-weight matching.",
+        task: "Starting from the clear board, load the mixed case and apply at least one suggested decoder step.",
+        hint: "The board begins empty for this question, so load the mixed case below first. You are still following a recovery hypothesis built from the defect pattern, not the hidden original error.",
+        success: "You’ve connected the abstract decoding idea to a concrete suggested recovery path starting from a freshly cleared board.",
+        scenario: "empty",
         defaultTool: "Z",
         allowedTools: ["X", "Z", "Y"],
         interactionMode: "decoder_only",
@@ -718,24 +984,41 @@ export default function LearnToricCode({
         showDecoder: true,
         showLogicalX: false,
         showLogicalZ: false,
+      },
+      {
+        id: "decoder-ambiguity",
+        title: "20. Decoding Can Be Ambiguous",
+        headline: "Different recovery paths can agree locally but differ topologically",
+        concept: "Two candidate recovery strings can remove the same visible syndrome while differing by a closed loop. On a torus, that difference can be logically harmless or logically disastrous depending on the homology class.",
+        task: "Use the clear board and your loop intuition to think about two different recoveries, then answer the harder decoding question.",
+        hint: "Ask whether two recoveries that clear the same defects must always be equivalent in the encoded space, or whether they can differ by a non-contractible loop.",
+        success: "You’ve reached the deeper toric-code idea: decoding is about the right homology class, not just clearing local defects.",
+        scenario: "mixed",
+        defaultTool: "Z",
+        allowedTools: [],
+        interactionMode: "decoder_only",
+        torus: true,
+        showDecoder: true,
+        showLogicalX: true,
+        showLogicalZ: true,
         quiz: {
-          prompt: "What information is the decoder using here?",
-          correct: "syndrome",
+          prompt: "Why can two recovery paths that remove the same defects still behave differently logically?",
+          correct: "homology",
           options: [
-            { id: "syndrome", label: "Only the syndrome defects", explanation: "Correct. The decoder only gets the stabilizer outcomes and must infer a likely recovery chain from them." },
-            { id: "true-error", label: "The exact original error", explanation: "That information is not available experimentally; otherwise there would be nothing to decode." },
-            { id: "logical-state", label: "The hidden logical qubit value", explanation: "We avoid directly measuring the logical state because that would destroy the encoded information." },
+            { id: "homology", label: "Because they can differ by a non-contractible loop and therefore act differently on the encoded state", explanation: "Correct. Clearing the local syndrome is not the whole story on a torus." },
+            { id: "same-always", label: "Because all successful recoveries are always logically identical", explanation: "No. That is exactly what topology can prevent." },
+            { id: "color-only", label: "Because one path may use a different color marker in the UI", explanation: "No. The important difference is topological, not cosmetic." },
           ],
         },
       },
       {
         id: "capstone",
-        title: "12. Capstone Lab",
+        title: "21. Capstone Lab",
         headline: "Decode a full configuration yourself",
-        concept: "This final lab combines the main thread of both PDFs: stabilizer checks detect violated symmetries, strings connect the observed boundaries, and topology decides whether a recovery is harmless or logically nontrivial.",
-        task: "Load any scenario, then remove all defects using manual moves, the decoder, or both.",
-        hint: "Try the mixed case first. Compare the suggested recovery strings and ask whether they differ only locally or by a non-contractible cycle.",
-        success: "You completed the guided module and reached an open-ended topological decoding lab.",
+        concept: "This final lab combines the whole lesson: local checks detect violated symmetries, strings create boundary syndromes, loops may be trivial or logical depending on topology, and a decoder must choose a recovery class from incomplete information.",
+        task: "Load a scenario and remove all defects using manual moves, the decoder, or both.",
+        hint: "Try the mixed case first. Ask not only whether the syndrome disappears, but whether your recovery differs from the fault by a harmless contractible loop or a logical cycle.",
+        success: "You completed the toric-code module and reached an open-ended decoding lab.",
         scenario: "empty",
         defaultTool: "Z",
         allowedTools: ["X", "Z", "Y"],
@@ -758,8 +1041,6 @@ export default function LearnToricCode({
   const [tool, setTool] = useState<Tool>("Z");
   const [torus, setTorus] = useState(false);
   const [showDecoder, setShowDecoder] = useState(false);
-  const [showLogicalX, setShowLogicalX] = useState(false);
-  const [showLogicalZ, setShowLogicalZ] = useState(false);
   const [decoderType, setDecoderType] = useState<DecoderType>("mwpm");
   const [state, setState] = useState<LearnState>(makeInitialState());
   const [stepMoves, setStepMoves] = useState(0);
@@ -790,13 +1071,11 @@ export default function LearnToricCode({
     setTool(currentStep.defaultTool);
     setTorus(currentStep.torus);
     setShowDecoder(currentStep.showDecoder);
-    setShowLogicalX(currentStep.showLogicalX);
-    setShowLogicalZ(currentStep.showLogicalZ);
-    setState(createScenarioState(currentStep.scenario));
+    setState(makeInitialState());
     setStepMoves(0);
     setDecoderActions(0);
-    setScenarioLoaded(currentStep.scenario !== "empty");
-    setEverHadDefects(currentStep.scenario !== "empty");
+    setScenarioLoaded(false);
+    setEverHadDefects(false);
   }, [currentStep]);
 
   const decoderSuggestions = useMemo(() => {
@@ -837,23 +1116,7 @@ export default function LearnToricCode({
       currentStepComplete),
   ).length;
 
-  const focusEdgeSet = new Set(currentStep.focusEdges ?? []);
-  const highlightedVertexSet = new Set(currentStep.highlightVertices ?? []);
-  const highlightedPlaquetteSet = new Set(currentStep.highlightPlaquettes ?? []);
-  const highlightedSupportEdges = new Set([
-    ...(currentStep.highlightVertices ?? []).flatMap(vertexSupportEdges),
-    ...(currentStep.highlightPlaquettes ?? []).flatMap(plaquetteSupportEdges),
-  ]);
-
-  const edgeLocked = (key: string) => {
-    if (currentStep.allowedTools.length === 0) return true;
-    if (currentStep.interactionMode === "decoder_only") return true;
-    if (currentStep.interactionMode === "focus") return !focusEdgeSet.has(key);
-    return false;
-  };
-
   const applyMove = (key: string) => {
-    if (edgeLocked(key)) return;
     setStepMoves((value) => value + 1);
     setState((prev) => applyOperation(prev, key, tool, torus));
   };
@@ -871,17 +1134,6 @@ export default function LearnToricCode({
     });
   };
 
-  const applyAllSuggestions = () => {
-    if (decoderSuggestions.length === 0) return;
-    setDecoderActions((value) => value + decoderSuggestions.length);
-    let next = { ...state, history: [...state.history] };
-    for (const step of decoderSuggestions) {
-      next = applyOperation(next, step.target, step.tool, torus);
-    }
-    next.history = [`Applied ${decoderSuggestions.length} decoder step(s).`, ...next.history].slice(0, 10);
-    setState(next);
-  };
-
   const loadScenario = (scenario: Scenario) => {
     if (scenario === "empty") return;
     setState(createScenarioState(scenario));
@@ -895,258 +1147,315 @@ export default function LearnToricCode({
     setTool(currentStep.defaultTool);
     setTorus(currentStep.torus);
     setShowDecoder(currentStep.showDecoder);
-    setShowLogicalX(currentStep.showLogicalX);
-    setShowLogicalZ(currentStep.showLogicalZ);
-    setState(createScenarioState(currentStep.scenario));
+    setState(makeInitialState());
     setStepMoves(0);
     setDecoderActions(0);
-    setScenarioLoaded(currentStep.scenario !== "empty");
-    setEverHadDefects(currentStep.scenario !== "empty");
+    setScenarioLoaded(false);
+    setEverHadDefects(false);
   };
 
   const quizFeedback = currentStep.quiz?.options.find((option) => option.id === quizAnswer)?.explanation;
-
+  const progressPercent = (completedSteps / courseSteps.length) * 100;
+  const boardFeedback = latestActionSummary(state.history[0], vertexCount, plaquetteCount);
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(180deg, #f4f7fb 0%, #e8eef7 100%)",
+        background:
+          "radial-gradient(circle at top left, #dff7f1 0%, transparent 30%), linear-gradient(180deg, #f7fbff 0%, #eef4fb 52%, #e6edf7 100%)",
         padding: 24,
         fontFamily: "Avenir Next, Segoe UI, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1400, margin: "0 auto", display: "grid", gridTemplateColumns: "380px 1fr", gap: 24 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <div style={{ ...panelStyle(), background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: "#0f766e", textTransform: "uppercase" }}>
-              Guided Module
-            </div>
-            <h2 style={{ margin: "8px 0 6px", fontSize: 30 }}>{moduleTitle}</h2>
-            <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
-              {moduleSubtitle}
-            </p>
-
-            <div style={{ marginTop: 14, marginBottom: 10, height: 10, borderRadius: 999, background: "#dbeafe", overflow: "hidden" }}>
-              <div
-                style={{
-                  width: `${(completedSteps / courseSteps.length) * 100}%`,
-                  height: "100%",
-                  background: "linear-gradient(90deg, #0f766e 0%, #2563eb 100%)",
-                }}
-              />
-            </div>
-
-            <div style={{ fontSize: 12, color: "#475569", marginBottom: 14 }}>
-              Progress: {completedSteps}/{courseSteps.length} steps complete
-            </div>
-
-            <div style={{ ...panelStyle(), padding: 14, background: "#f8fafc", boxShadow: "none" }}>
-              <div style={{ fontSize: 12, color: "#0f766e", fontWeight: 700 }}>{currentStep.title}</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: "#0f172a", margin: "4px 0 8px" }}>{currentStep.headline}</div>
-              <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.55, marginBottom: 10 }}>{currentStep.concept}</div>
-
-              <div style={{ ...badgeStyle("#e0f2fe", "#0c4a6e") }}>Goal: {currentStep.task}</div>
-              <div style={{ ...badgeStyle("#ecfccb", "#3f6212") }}>Hint: {currentStep.hint}</div>
-
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: 12,
-                  borderRadius: 14,
-                  background: currentStepComplete ? "#dcfce7" : "#fff7ed",
-                  color: currentStepComplete ? "#166534" : "#9a3412",
-                  fontSize: 13,
-                  border: `1px solid ${currentStepComplete ? "#86efac" : "#fed7aa"}`,
-                }}
-              >
-                {currentStepComplete ? currentStep.success : "Current step is still in progress."}
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
-              <button style={smallButton(false)} onClick={() => setStepIndex((value) => Math.max(0, value - 1))} disabled={stepIndex === 0}>
-                Previous
-              </button>
-              <button style={smallButton(false)} onClick={resetCurrentStep}>
-                Reset step
-              </button>
-              <button
-                style={smallButton(currentStepComplete)}
-                onClick={() => setStepIndex((value) => Math.min(courseSteps.length - 1, value + 1))}
-                disabled={!currentStepComplete || stepIndex === courseSteps.length - 1}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-
-          <div style={panelStyle()}>
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>Concept Check</h3>
-            {currentStep.quiz ? (
-              <>
-                <div style={{ fontSize: 14, color: "#0f172a", marginBottom: 10 }}>{currentStep.quiz.prompt}</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {currentStep.quiz.options.map((option) => {
-                    const selected = quizAnswer === option.id;
-                    const correct = currentStep.quiz?.correct === option.id;
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => setQuizAnswers((prev) => ({ ...prev, [currentStep.id]: option.id }))}
-                        style={{
-                          padding: "11px 12px",
-                          borderRadius: 12,
-                          border: `1px solid ${selected ? (correct ? "#16a34a" : "#fb923c") : "#cbd5e1"}`,
-                          background: selected ? (correct ? "#f0fdf4" : "#fff7ed") : "white",
-                          textAlign: "left",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                          color: "#0f172a",
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div style={{ marginTop: 10, fontSize: 13, color: quizPassed ? "#166534" : "#7c2d12" }}>
-                  {quizFeedback ?? "Pick an answer before moving on."}
-                </div>
-              </>
-            ) : (
-              <div style={{ color: "#64748b", fontSize: 14 }}>
-                This step is purely hands-on. Use the lattice interaction to build intuition.
-              </div>
-            )}
-          </div>
-
-          <div style={panelStyle()}>
-            <h3 style={{ marginTop: 0, marginBottom: 10 }}>Lab Controls</h3>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-              {(["Z", "X", "Y"] as Tool[]).map((candidate) => {
-                const allowed = currentStep.allowedTools.includes(candidate);
-                return (
-                  <button
-                    key={candidate}
-                    style={{
-                      ...smallButton(tool === candidate),
-                      opacity: allowed ? 1 : 0.45,
-                      cursor: allowed ? "pointer" : "not-allowed",
-                    }}
-                    disabled={!allowed}
-                    onClick={() => setTool(candidate)}
-                  >
-                    {candidate} operator
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-              <button style={smallButton(decoderType === "greedy")} onClick={() => setDecoderType("greedy")}>
-                Greedy
-              </button>
-              <button style={smallButton(decoderType === "mwpm")} onClick={() => setDecoderType("mwpm")}>
-                MWPM
-              </button>
-            </div>
-
-            <div style={{ ...badgeStyle("#eff6ff", "#1d4ed8"), marginRight: 0 }}>
-              Interaction mode: {currentStep.interactionMode === "focus" ? "guided focus" : currentStep.interactionMode === "decoder_only" ? "decoder only" : "free lab"}
-            </div>
-            <div style={{ ...badgeStyle(totalDefects === 0 ? "#dcfce7" : "#fef3c7", totalDefects === 0 ? "#166534" : "#92400e"), marginRight: 0 }}>
-              Defects on board: {totalDefects}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
-              <button style={smallButton(false)} onClick={applyFirstSuggestion} disabled={decoderSuggestions.length === 0 || !showDecoder}>
-                Apply first decoder step
-              </button>
-              <button style={smallButton(false)} onClick={applyAllSuggestions} disabled={decoderSuggestions.length === 0 || !showDecoder}>
-                Apply all decoder steps
-              </button>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-              <button style={smallButton(false)} onClick={() => loadScenario("single_z")} disabled={currentStep.id !== "capstone"}>
-                Load string
-              </button>
-              <button style={smallButton(false)} onClick={() => loadScenario("mixed")} disabled={currentStep.id !== "capstone"}>
-                Load mixed case
-              </button>
-            </div>
-
-            <div style={{ color: "#64748b", fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>
-              Earlier steps intentionally limit controls so each new idea lands before the next one appears.
-            </div>
-          </div>
-
-          <div style={panelStyle()}>
-            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Observed Syndromes</h3>
-            <div>
-              <span style={badgeStyle("#fef3c7", "#92400e")}>Vertex defects: {vertexCount}</span>
-              <span style={badgeStyle("#dcfce7", "#166534")}>Plaquette defects: {plaquetteCount}</span>
-              <span style={badgeStyle("#e0e7ff", "#3730a3")}>Manual moves: {stepMoves}</span>
-              <span style={badgeStyle("#fce7f3", "#9d174d")}>Decoder actions: {decoderActions}</span>
-            </div>
-            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
-              Yellow dots mark vertex syndromes. Green tiles mark plaquette syndromes. Watch how strings move the endpoints while closed loops erase them.
-            </div>
-          </div>
-
-          <div style={panelStyle()}>
-            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Activity Log</h3>
-            {state.history.map((line, index) => (
-              <div
-                key={`${line}-${index}`}
-                style={{
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 12,
-                  padding: 9,
-                  marginBottom: 8,
-                  color: "#334155",
-                  fontSize: 13,
-                }}
-              >
-                {line}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={panelStyle()}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 14 }}>
-            <div>
-              <h2 style={{ margin: 0 }}>Interactive Lattice Lab</h2>
-              <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
-                Click highlighted edges when guided. In the capstone, the whole board opens up.
-              </div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ ...badgeStyle(torus ? "#ede9fe" : "#e2e8f0", torus ? "#6d28d9" : "#334155"), marginRight: 0 }}>
-                {torus ? "Torus mode on" : "Planar patch"}
-              </div>
-              <div style={{ ...badgeStyle(showDecoder ? "#dbeafe" : "#e2e8f0", showDecoder ? "#1d4ed8" : "#334155"), marginRight: 0 }}>
-                {showDecoder ? `${decoderType.toUpperCase()} visible` : "Decoder hidden"}
-              </div>
-            </div>
-          </div>
-
+      <div style={{ maxWidth: 1380, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}>
+        <div
+          style={{
+            ...panelStyle(),
+            padding: 24,
+            background: "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(239,248,255,0.94) 100%)",
+          }}
+        >
           <div
             style={{
-              position: "relative",
-              width: 820,
-              height: 820,
-              maxWidth: "100%",
-              aspectRatio: "1 / 1",
-              border: "1px solid #dbe5f0",
-              borderRadius: 24,
-              background: "radial-gradient(circle at top, #ffffff 0%, #f8fafc 65%, #eef4fb 100%)",
-              margin: "0 auto",
-              overflow: "hidden",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 18,
+              marginBottom: 18,
             }}
           >
+            <div style={{ maxWidth: 680 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: "#0f766e", textTransform: "uppercase", marginBottom: 8 }}>
+                Guided Module
+              </div>
+              <h1 style={{ margin: "0 0 8px", fontSize: 34, color: "#0f172a" }}>{moduleTitle}</h1>
+              <p style={{ margin: 0, color: "#475569", fontSize: 15, lineHeight: 1.6 }}>{moduleSubtitle}</p>
+            </div>
+
+            <div style={{ minWidth: 220 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#0f766e", marginBottom: 8 }}>Progress</div>
+              <div style={{ height: 12, borderRadius: 999, background: "#dbeafe", overflow: "hidden", marginBottom: 10 }}>
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #0f766e 0%, #2563eb 100%)",
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 13, color: "#475569" }}>
+                {completedSteps} of {courseSteps.length} steps complete
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(420px, 0.9fr) minmax(680px, 1.15fr)",
+            gap: 22,
+            alignItems: "start",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ ...panelStyle(), padding: 28 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                <div style={badgeStyle("#ccfbf1", "#115e59")}>Step {stepIndex + 1}</div>
+                <div style={badgeStyle("#e0e7ff", "#3730a3")}>{currentStepComplete ? "Completed" : "In progress"}</div>
+                <div style={badgeStyle(torus ? "#ede9fe" : "#e2e8f0", torus ? "#6d28d9" : "#334155")}>
+                  {torus ? "Torus mode" : "Planar patch"}
+                </div>
+              </div>
+
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#0f766e", marginBottom: 8 }}>
+                {currentStep.title}
+              </div>
+              <h2 style={{ margin: "0 0 14px", fontSize: 32, lineHeight: 1.15, color: "#0f172a" }}>
+                {currentStep.headline}
+              </h2>
+              <p style={{ margin: 0, fontSize: 16, lineHeight: 1.75, color: "#334155" }}>
+                {currentStep.concept}
+              </p>
+
+              {currentStep.quiz && (
+                <div style={{ marginTop: 22 }}>
+                  <h3 style={{ margin: "0 0 10px", fontSize: 20, color: "#0f172a" }}>Concept check</h3>
+                  <div style={{ fontSize: 15, color: "#0f172a", marginBottom: 12 }}>{currentStep.quiz.prompt}</div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {currentStep.quiz.options.map((option) => {
+                      const selected = quizAnswer === option.id;
+                      const correct = currentStep.quiz?.correct === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => setQuizAnswers((prev) => ({ ...prev, [currentStep.id]: option.id }))}
+                          style={{
+                            padding: "14px 16px",
+                            borderRadius: 16,
+                            border: `1px solid ${selected ? (correct ? "#16a34a" : "#fb923c") : "#cbd5e1"}`,
+                            background: selected ? (correct ? "#f0fdf4" : "#fff7ed") : "white",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                            color: "#0f172a",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.6, color: quizPassed ? "#166534" : "#7c2d12" }}>
+                    {quizFeedback ?? "Pick an answer before moving on."}
+                  </div>
+                </div>
+              )}
+
+              {!currentStep.quiz && (
+                <div
+                  style={{
+                    marginTop: 22,
+                    padding: 18,
+                    borderRadius: 18,
+                    background: "#fff7ed",
+                    border: "1px solid #fed7aa",
+                    color: "#9a3412",
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  This step is completed by working in the lattice lab below.
+                </div>
+              )}
+
+              <div
+                style={{
+                  marginTop: 22,
+                  padding: 18,
+                  borderRadius: 18,
+                  background: currentStepComplete ? "#dcfce7" : "#f8fafc",
+                  border: `1px solid ${currentStepComplete ? "#86efac" : "#dbe5f0"}`,
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0f766e", marginBottom: 6 }}>Takeaway</div>
+                <div style={{ fontSize: 14, lineHeight: 1.65, color: currentStepComplete ? "#166534" : "#475569" }}>
+                  {currentStepComplete
+                    ? currentStep.success
+                    : "Finish the current check or lattice action to unlock the next step."}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "space-between", alignItems: "center", marginTop: 24 }}>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    style={smallButton(false, stepIndex === 0)}
+                    onClick={() => setStepIndex((value) => Math.max(0, value - 1))}
+                    disabled={stepIndex === 0}
+                  >
+                    Previous
+                  </button>
+                  <button style={smallButton(false)} onClick={resetCurrentStep}>
+                    Reset step
+                  </button>
+                </div>
+
+                <button
+                  style={smallButton(currentStepComplete, !currentStepComplete || stepIndex === courseSteps.length - 1)}
+                  onClick={() => setStepIndex((value) => Math.min(courseSteps.length - 1, value + 1))}
+                  disabled={!currentStepComplete || stepIndex === courseSteps.length - 1}
+                >
+                  {stepIndex === courseSteps.length - 1 ? "Lesson complete" : "Continue"}
+                </button>
+              </div>
+            </div>
+
+            <div style={panelStyle()}>
+              <details>
+                <summary style={{ cursor: "pointer", fontWeight: 700, color: "#0f172a" }}>Need a hint or formula?</summary>
+                <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                  <div style={{ border: "1px solid #dbe5f0", borderRadius: 18, padding: 16, background: "#f8fafc" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#0f766e", marginBottom: 6 }}>Hint</div>
+                    <div style={{ fontSize: 14, lineHeight: 1.65, color: "#334155" }}>{currentStep.hint}</div>
+                  </div>
+                  {currentStep.formula && (
+                    <div style={{ border: "1px solid #ddd6fe", borderRadius: 18, padding: 16, background: "#f5f3ff" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#6d28d9", marginBottom: 6 }}>Key formula</div>
+                      <div style={{ fontSize: 14, lineHeight: 1.65, color: "#4c1d95" }}>{currentStep.formula}</div>
+                    </div>
+                  )}
+                  {currentStep.visualTakeaway && (
+                    <div style={{ border: "1px solid #bae6fd", borderRadius: 18, padding: 16, background: "#f0f9ff" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 6 }}>Visual takeaway</div>
+                      <div style={{ fontSize: 14, lineHeight: 1.65, color: "#334155" }}>{currentStep.visualTakeaway}</div>
+                    </div>
+                  )}
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={panelStyle()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 14 }}>
+                <div>
+                  <h2 style={{ margin: 0 }}>Interactive Lattice Lab</h2>
+                  <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
+                    Each question starts with a clear board. Follow the written prompt above, then use the board to test the idea.
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ ...badgeStyle(showDecoder ? "#dbeafe" : "#e2e8f0", showDecoder ? "#1d4ed8" : "#334155"), marginRight: 0 }}>
+                    {showDecoder ? `${decoderType.toUpperCase()} visible` : "Decoder hidden"}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: currentStep.allowedTools.length > 0 ? "#fff7ed" : "#f8fafc",
+                  border: `1px solid ${currentStep.allowedTools.length > 0 ? "#fed7aa" : "#dbe5f0"}`,
+                  color: currentStep.allowedTools.length > 0 ? "#9a3412" : "#475569",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Active board mode:</strong> {currentStep.task}{" "}
+                {currentStep.interactionMode === "decoder_only"
+                  ? "Use the decoder action below and watch the proposed recovery update the lattice."
+                  : "The board is fully open, so you can test the idea anywhere on the lattice."}
+              </div>
+
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  borderRadius: 16,
+                  background: "#f8fbff",
+                  border: "1px solid #dbe5f0",
+                  color: "#334155",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Board hint:</strong> {currentStep.hint}
+              </div>
+
+              <div
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  maxWidth: 900,
+                  aspectRatio: "1 / 1",
+                  border: "1px solid #dbe5f0",
+                  borderRadius: 24,
+                  background: "radial-gradient(circle at top, #ffffff 0%, #f8fafc 65%, #eef4fb 100%)",
+                  margin: "0 auto",
+                  overflow: "hidden",
+                }}
+              >
+            {Array.from({ length: N + 1 }).flatMap((_, r) =>
+              Array.from({ length: N }).map((_, c) => (
+                <div
+                  key={`lattice-h-${r}-${c}`}
+                  style={{
+                    position: "absolute",
+                    left: `${10 + c * 20}%`,
+                    top: `${10 + r * 20}%`,
+                    width: "20%",
+                    height: 2,
+                    transform: "translateY(-50%)",
+                    background: "rgba(148, 163, 184, 0.45)",
+                    pointerEvents: "none",
+                  }}
+                />
+              )),
+            )}
+
+            {Array.from({ length: N }).flatMap((_, r) =>
+              Array.from({ length: N + 1 }).map((_, c) => (
+                <div
+                  key={`lattice-v-${r}-${c}`}
+                  style={{
+                    position: "absolute",
+                    left: `${10 + c * 20}%`,
+                    top: `${10 + r * 20}%`,
+                    width: 2,
+                    height: "20%",
+                    transform: "translateX(-50%)",
+                    background: "rgba(148, 163, 184, 0.45)",
+                    pointerEvents: "none",
+                  }}
+                />
+              )),
+            )}
+
             {Array.from({ length: N }).flatMap((_, r) =>
               Array.from({ length: N }).map((_, c) => {
                 const key = plaquetteKey(r, c);
@@ -1160,18 +1469,22 @@ export default function LearnToricCode({
                       top: `${10 + r * 20}%`,
                       width: "18%",
                       height: "18%",
-                      border: active ? "2px solid #22c55e" : highlightedPlaquetteSet.has(key) ? "2px solid #10b981" : "1px solid #dbe5f0",
-                      background: active ? "#dcfce7" : highlightedPlaquetteSet.has(key) ? "rgba(220, 252, 231, 0.9)" : "rgba(255,255,255,0.72)",
-                      borderRadius: 16,
+                      border: active ? "2px solid #16a34a" : "1px solid #cbd5e1",
+                      background: active
+                        ? "rgba(187, 247, 208, 0.95)"
+                        : "rgba(241, 245, 249, 0.82)",
+                      borderRadius: 0,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 12,
-                      color: active ? "#166534" : highlightedPlaquetteSet.has(key) ? "#047857" : "#94a3b8",
-                      boxShadow: highlightedPlaquetteSet.has(key) ? "0 0 0 4px rgba(16, 185, 129, 0.14)" : "none",
+                      color: active ? "#166534" : "#64748b",
+                      boxShadow: active
+                        ? "0 0 0 5px rgba(34, 197, 94, 0.18)"
+                          : "none",
                     }}
                   >
-                    {active ? "plaquette syndrome" : highlightedPlaquetteSet.has(key) ? "B_p" : ""}
+                    {active ? "B_p" : ""}
                   </div>
                 );
               }),
@@ -1180,49 +1493,34 @@ export default function LearnToricCode({
             {hEdges.map(({ key, r, c }) => {
               const op = state.edges[key] ?? "I";
               const suggestedTool = suggestionMap[key];
-              const onLogicalZ = logicalZLoop.includes(key);
-              const focused = focusEdgeSet.has(key);
-              const locked = edgeLocked(key);
+              const clickable = true;
               return (
                 <button
                   key={key}
                   onClick={() => applyMove(key)}
-                  disabled={locked}
-                  title={locked ? "This edge is locked for the current step." : key}
+                  title={key}
                   style={{
                     position: "absolute",
-                    left: `${10 + c * 20}%`,
-                    top: `${7 + r * 20}%`,
-                    width: "18%",
-                    height: 12,
-                    borderRadius: 999,
-                    border: "none",
-                    color: "white",
-                    fontSize: 10,
+                    left: `${20 + c * 20}%`,
+                    top: `${10 + r * 20}%`,
+                    width: 34,
+                    height: 34,
+                    transform: "translate(-50%, -50%)",
+                    borderRadius: "50%",
+                    border: `2px solid ${op === "I" ? "#94a3b8" : edgeColor(op)}`,
+                    color: op === "I" ? "#475569" : "white",
+                    fontSize: 12,
                     fontWeight: 700,
-                    cursor: locked ? "default" : "pointer",
-                    background: edgeColor(op),
+                    cursor: clickable ? "pointer" : "default",
+                    background: op === "I" ? "rgba(255, 255, 255, 0.96)" : edgeColor(op),
                     outline:
                       showDecoder && suggestedTool
                         ? `3px dashed ${suggestedTool === "Z" ? "#dc2626" : "#2563eb"}`
-                        : focused
-                          ? "3px solid #f59e0b"
-                          : highlightedSupportEdges.has(key)
-                            ? "3px solid #14b8a6"
-                            : currentStep.id === "stabilizer-intro"
-                              ? "2px solid #cbd5e1"
-                          : showLogicalZ && onLogicalZ
-                            ? "3px solid #dc2626"
-                            : "none",
-                    boxShadow: focused
-                      ? "0 0 0 3px rgba(245, 158, 11, 0.2)"
-                      : highlightedSupportEdges.has(key)
-                        ? "0 0 0 3px rgba(20, 184, 166, 0.16)"
-                        : showLogicalZ && onLogicalZ
-                          ? "0 0 0 3px rgba(220, 38, 38, 0.16)"
-                          : "none",
-                    opacity: locked && op === "I" ? 0.35 : 1,
+                        : "none",
+                    boxShadow: "none",
+                    opacity: 1,
                     outlineOffset: 2,
+                    zIndex: op !== "I" ? 3 : 2,
                   }}
                 >
                   {op === "I" ? "" : op}
@@ -1233,52 +1531,37 @@ export default function LearnToricCode({
             {vEdges.map(({ key, r, c }) => {
               const op = state.edges[key] ?? "I";
               const suggestedTool = suggestionMap[key];
-              const onLogicalX = logicalXLoop.includes(key);
-              const focused = focusEdgeSet.has(key);
-              const locked = edgeLocked(key);
+              const clickable = true;
               return (
                 <button
                   key={key}
                   onClick={() => applyMove(key)}
-                  disabled={locked}
-                  title={locked ? "This edge is locked for the current step." : key}
+                  title={key}
                   style={{
                     position: "absolute",
-                    left: `${7 + c * 20}%`,
-                    top: `${10 + r * 20}%`,
-                    width: 12,
-                    height: "18%",
-                    borderRadius: 999,
-                    border: "none",
-                    color: "white",
-                    fontSize: 10,
+                    left: `${10 + c * 20}%`,
+                    top: `${20 + r * 20}%`,
+                    width: 34,
+                    height: 34,
+                    transform: "translate(-50%, -50%)",
+                    borderRadius: "50%",
+                    border: `2px solid ${op === "I" ? "#94a3b8" : edgeColor(op)}`,
+                    color: op === "I" ? "#475569" : "white",
+                    fontSize: 12,
                     fontWeight: 700,
-                    cursor: locked ? "default" : "pointer",
-                    background: edgeColor(op),
+                    cursor: clickable ? "pointer" : "default",
+                    background: op === "I" ? "rgba(255, 255, 255, 0.96)" : edgeColor(op),
                     outline:
                       showDecoder && suggestedTool
                         ? `3px dashed ${suggestedTool === "Z" ? "#dc2626" : "#2563eb"}`
-                        : focused
-                          ? "3px solid #f59e0b"
-                          : highlightedSupportEdges.has(key)
-                            ? "3px solid #14b8a6"
-                            : currentStep.id === "stabilizer-intro"
-                              ? "2px solid #cbd5e1"
-                          : showLogicalX && onLogicalX
-                            ? "3px solid #2563eb"
-                            : "none",
-                    boxShadow: focused
-                      ? "0 0 0 3px rgba(245, 158, 11, 0.2)"
-                      : highlightedSupportEdges.has(key)
-                        ? "0 0 0 3px rgba(20, 184, 166, 0.16)"
-                        : showLogicalX && onLogicalX
-                          ? "0 0 0 3px rgba(37, 99, 235, 0.16)"
-                          : "none",
-                    opacity: locked && op === "I" ? 0.35 : 1,
+                        : "none",
+                    boxShadow: "none",
+                    opacity: 1,
                     outlineOffset: 2,
+                    zIndex: op !== "I" ? 3 : 2,
                   }}
                 >
-                  <span style={{ display: "inline-block", transform: "rotate(-90deg)" }}>{op === "I" ? "" : op}</span>
+                  {op === "I" ? "" : op}
                 </button>
               );
             })}
@@ -1294,15 +1577,32 @@ export default function LearnToricCode({
                       position: "absolute",
                       left: `${10 + c * 20}%`,
                       top: `${10 + r * 20}%`,
-                      width: 16,
-                      height: 16,
+                      width: 34,
+                      height: 34,
                       transform: "translate(-50%, -50%)",
-                      borderRadius: "50%",
-                      border: active ? "2px solid #eab308" : highlightedVertexSet.has(key) ? "2px solid #f59e0b" : "2px solid #64748b",
-                      background: active ? "#fde047" : highlightedVertexSet.has(key) ? "#fef3c7" : "white",
-                      boxShadow: active ? "0 0 12px rgba(234, 179, 8, 0.35)" : highlightedVertexSet.has(key) ? "0 0 0 5px rgba(245, 158, 11, 0.14)" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: active ? "#854d0e" : "#94a3b8",
+                      fontSize: active ? 11 : 10,
+                      fontWeight: 700,
+                      lineHeight: 1,
+                      background: active
+                        ? "rgba(254, 240, 138, 0.98)"
+                        : "transparent",
+                      borderRadius: active ? "50%" : 0,
+                      border: active
+                        ? "2px solid #f59e0b"
+                          : "none",
+                      boxShadow: active
+                        ? "0 0 0 7px rgba(234, 179, 8, 0.26), 0 0 24px rgba(245, 158, 11, 0.35)"
+                          : "none",
+                      pointerEvents: "none",
+                      zIndex: active ? 5 : 1,
                     }}
-                  />
+                  >
+                    {active ? "A_v" : "•"}
+                  </div>
                 );
               }),
             )}
@@ -1317,59 +1617,89 @@ export default function LearnToricCode({
                 </div>
               </div>
             )}
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 16, marginTop: 16 }}>
-            <div style={{ ...panelStyle(), padding: 14, boxShadow: "none", background: "#f8fafc" }}>
-              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Why This Step Matters</h3>
-              <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.6 }}>{currentStep.concept}</div>
+              </div>
             </div>
 
-            <div style={{ ...panelStyle(), padding: 14, boxShadow: "none", background: "#f8fafc" }}>
-              <h3 style={{ marginTop: 0, marginBottom: 8 }}>{currentStep.formula ? "Stabilizer Lens" : "Decoder Preview"}</h3>
-              {currentStep.formula ? (
+            <div style={panelStyle()}>
+              <h3 style={{ margin: "0 0 10px", color: "#0f172a" }}>Basic controls</h3>
+              <div style={{ marginBottom: 12 }}>
+                <span style={badgeStyle("#fef3c7", "#92400e")}>Vertex defects: {vertexCount}</span>
+                <span style={badgeStyle("#dcfce7", "#166534")}>Plaquette defects: {plaquetteCount}</span>
+                <span style={badgeStyle("#e0e7ff", "#3730a3")}>Moves: {stepMoves}</span>
+              </div>
+
+              <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 12 }}>
+                Pick a tool, then click any edge on the board. All guidance for the question is given in the text panels.
+              </div>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                {(["Z", "X", "Y"] as Tool[]).map((candidate) => (
+                  <button
+                    key={candidate}
+                    style={smallButton(tool === candidate)}
+                    onClick={() => setTool(candidate)}
+                  >
+                    {candidate}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <span style={badgeStyle("#eff6ff", "#1d4ed8")}>Current tool: {tool}</span>
+                <span style={badgeStyle("#fff7ed", "#9a3412")}>Clickable edges: full board</span>
+              </div>
+
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 16,
+                  border: "1px solid #dbe5f0",
+                  background: "#f8fafc",
+                  fontSize: 13,
+                  color: "#334155",
+                  lineHeight: 1.6,
+                  marginBottom: showDecoder || currentStep.id === "capstone" ? 12 : 0,
+                }}
+              >
+                {boardFeedback}
+              </div>
+
+              {showDecoder && (
                 <>
-                  <div style={{ color: "#0f172a", fontSize: 13, fontWeight: 700, lineHeight: 1.6, marginBottom: 8 }}>
-                    {currentStep.formula}
-                  </div>
-                  <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.6, marginBottom: 10 }}>
-                    {currentStep.visualTakeaway}
-                  </div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ border: "1px solid #fde68a", borderRadius: 10, padding: 8, background: "#fffbeb", fontSize: 13, color: "#92400e" }}>
-                      Yellow vertices: X-type star stabilizers, measured as local parity checks.
-                    </div>
-                    <div style={{ border: "1px solid #a7f3d0", borderRadius: 10, padding: 8, background: "#ecfdf5", fontSize: 13, color: "#065f46" }}>
-                      Green plaquettes: Z-type stabilizers, also measured locally.
-                    </div>
-                    <div style={{ border: "1px solid #99f6e4", borderRadius: 10, padding: 8, background: "#f0fdfa", fontSize: 13, color: "#155e75" }}>
-                      Teal edges: the qubits multiplied together by the highlighted stabilizer generator.
-                    </div>
-                  </div>
-                </>
-              ) : showDecoder ? (
-                decoderSuggestions.length === 0 ? (
-                  <div style={{ color: "#64748b", fontSize: 13 }}>No active syndrome pairs to connect right now.</div>
-                ) : (
-                  decoderSuggestions.slice(0, 8).map((step, index) => (
-                    <div
-                      key={`${step.target}-${index}`}
-                      style={{
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 10,
-                        padding: 8,
-                        marginBottom: 6,
-                        fontSize: 13,
-                        background: "white",
-                      }}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                    <button style={smallButton(decoderType === "greedy")} onClick={() => setDecoderType("greedy")}>
+                      Greedy
+                    </button>
+                    <button style={smallButton(decoderType === "mwpm")} onClick={() => setDecoderType("mwpm")}>
+                      MWPM
+                    </button>
+                    <button
+                      style={smallButton(false, decoderSuggestions.length === 0)}
+                      onClick={applyFirstSuggestion}
+                      disabled={decoderSuggestions.length === 0}
                     >
-                      Step {index + 1}: apply <strong>{step.tool}</strong> on <code>{step.target}</code> to reduce {step.defectType} defects.
+                      Apply first step
+                    </button>
+                  </div>
+
+                  {decoderSuggestions.length > 0 && (
+                    <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6 }}>
+                      Next suggestion: <strong>{decoderSuggestions[0].tool}</strong> on <code>{decoderSuggestions[0].target}</code>.
                     </div>
-                  ))
-                )
-              ) : (
-                <div style={{ color: "#64748b", fontSize: 13 }}>
-                  Decoder suggestions appear later, after the syndrome picture makes sense by itself.
+                  )}
+                </>
+              )}
+
+              {(currentStep.id === "decoder" || currentStep.id === "capstone") && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  {currentStep.id === "capstone" && (
+                    <button style={smallButton(false)} onClick={() => loadScenario("single_z")}>
+                      Load string
+                    </button>
+                  )}
+                  <button style={smallButton(false)} onClick={() => loadScenario("mixed")}>
+                    Load mixed case
+                  </button>
                 </div>
               )}
             </div>

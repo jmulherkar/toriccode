@@ -55,6 +55,10 @@ type CourseStep = {
   showDecoder: boolean;
   showLogicalX: boolean;
   showLogicalZ: boolean;
+  formula?: string;
+  visualTakeaway?: string;
+  highlightVertices?: string[];
+  highlightPlaquettes?: string[];
   quiz?: Quiz;
 };
 
@@ -208,6 +212,21 @@ function buildPlaquettePath(start: string, end: string, torus: boolean): string[
   }
 
   return path;
+}
+
+function vertexSupportEdges(key: string) {
+  const { r, c } = parseVertexKey(key);
+  const edges: string[] = [];
+  if (c > 0) edges.push(edgeKeyH(r, c - 1));
+  if (c < N) edges.push(edgeKeyH(r, c));
+  if (r > 0) edges.push(edgeKeyV(r - 1, c));
+  if (r < N) edges.push(edgeKeyV(r, c));
+  return edges;
+}
+
+function plaquetteSupportEdges(key: string) {
+  const { r, c } = parsePlaquetteKey(key);
+  return [edgeKeyH(r, c), edgeKeyV(r, c), edgeKeyH(r + 1, c), edgeKeyV(r, c + 1)];
 }
 
 function greedyPairing(keys: string[], pathBuilder: (a: string, b: string) => string[]) {
@@ -377,6 +396,12 @@ function stepIsComplete(context: CompletionContext) {
   const plaquetteCount = countTrue(state.plaquetteDefects);
 
   switch (currentStep.id) {
+    case "stabilizer-intro":
+      return quizPassed;
+    case "star-check":
+      return quizPassed && stepMoves >= 1 && vertexCount === 2 && plaquetteCount === 0;
+    case "plaquette-check":
+      return quizPassed && stepMoves >= 1 && vertexCount === 0 && plaquetteCount === 2;
     case "intro":
       return quizPassed && stepMoves >= 1;
     case "z-error":
@@ -400,15 +425,115 @@ function stepIsComplete(context: CompletionContext) {
   }
 }
 
-export default function LearnToricCode() {
+type LearnToricCodeProps = {
+  initialStepId?: string;
+  moduleTitle?: string;
+  moduleSubtitle?: string;
+};
+
+export default function LearnToricCode({
+  initialStepId = "stabilizer-intro",
+  moduleTitle = "Learn Toric Code",
+  moduleSubtitle = "A slow, interactive path from stabilizer intuition to topology-aware decoding.",
+}: LearnToricCodeProps) {
   const logicalZLoop = useMemo(() => Array.from({ length: N }, (_, c) => edgeKeyH(Math.floor(N / 2), c)), []);
   const logicalXLoop = useMemo(() => Array.from({ length: N }, (_, r) => edgeKeyV(r, Math.floor(N / 2))), []);
 
   const courseSteps = useMemo<CourseStep[]>(
     () => [
       {
+        id: "stabilizer-intro",
+        title: "1. Stabilizers First",
+        headline: "The code is defined by local checks",
+        concept: "In the stabilizer formalism, we do not describe the toric code by listing every amplitude. Instead, we describe the allowed states by the commuting checks they satisfy. Star checks are X-type operators on the four edges touching a vertex, and plaquette checks are Z-type operators on the four edges around a face.",
+        task: "Answer the concept check, then inspect the highlighted star and plaquette supports on the board.",
+        hint: "Read the board as a map of constraints: yellow stars are X-type checks, green plaquettes are Z-type checks, and the code space is where all of them return +1.",
+        success: "You’ve got the central viewpoint in place: the toric code is a lattice of stabilizer constraints.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: [],
+        interactionMode: "focus",
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "A_v = product of X on the four incident edges,   B_p = product of Z on the four boundary edges",
+        visualTakeaway: "The highlighted edges are not random geometry. They are the qubits multiplied together by one stabilizer generator.",
+        highlightVertices: [vertexKey(2, 2)],
+        highlightPlaquettes: [plaquetteKey(1, 1)],
+        quiz: {
+          prompt: "In this app, what do the star and plaquette markers represent?",
+          correct: "checks",
+          options: [
+            { id: "checks", label: "Local stabilizer checks", explanation: "Right. They are the commuting X-type and Z-type operators that define the code space." },
+            { id: "qubits", label: "Physical qubits", explanation: "The physical qubits live on the edges, not on the stars or plaquettes." },
+            { id: "decoder-paths", label: "Decoder path markers", explanation: "Decoder paths are suggested later. These markers are the checks the decoder reads out." },
+          ],
+        },
+      },
+      {
+        id: "star-check",
+        title: "2. Star Checks React to Z Errors",
+        headline: "A Z on one edge flips adjacent star outcomes",
+        concept: "A star stabilizer is an X-type operator. A Z error anticommutes with X on the same qubit, so the star checks touching that edge flip from +1 to -1. This is the stabilizer explanation behind the yellow defect pair.",
+        task: "Answer the check, then place a Z on the highlighted edge and watch the neighboring star syndromes appear.",
+        hint: "Only the two star checks that share that edge should react. The plaquette channel stays quiet here.",
+        success: "You’ve linked the visible syndrome pattern to the stabilizer rule behind it.",
+        scenario: "empty",
+        defaultTool: "Z",
+        allowedTools: ["Z"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyH(1, 1)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "Z anticommutes with the neighboring X-type star checks, so those measurement signs flip",
+        visualTakeaway: "The yellow pair is the footprint of one violated stabilizer family, not a direct picture of the hidden quantum state.",
+        highlightVertices: [vertexKey(1, 1), vertexKey(1, 2)],
+        quiz: {
+          prompt: "Why do the two nearby star checks flip after a Z error on one edge?",
+          correct: "anticommutes",
+          options: [
+            { id: "anticommutes", label: "Because Z anticommutes with those X-type checks", explanation: "Exactly. The star generators touching that edge change sign because the local Pauli operators anticommute." },
+            { id: "same-pauli", label: "Because they use the same Z operator", explanation: "Not here. The star checks are X-type, which is why Z disturbs them." },
+            { id: "decoder", label: "Because the decoder chooses them", explanation: "The syndrome appears before any decoder acts. It comes from the stabilizer measurements themselves." },
+          ],
+        },
+      },
+      {
+        id: "plaquette-check",
+        title: "3. Plaquette Checks React to X Errors",
+        headline: "An X on one edge flips adjacent plaquette outcomes",
+        concept: "A plaquette stabilizer is a Z-type operator around one face. An X error anticommutes with the neighboring plaquette checks, so those faces report a nontrivial syndrome. This is the dual channel to the star-check story.",
+        task: "Answer the check, then place an X on the highlighted edge and look for the two green plaquette defects.",
+        hint: "The same visual rule applies: one edge error is seen through the local checks that touch it and anticommute with it.",
+        success: "You’ve now seen both stabilizer channels that the toric code uses for detection.",
+        scenario: "empty",
+        defaultTool: "X",
+        allowedTools: ["X"],
+        interactionMode: "focus",
+        focusEdges: [edgeKeyV(1, 2)],
+        torus: false,
+        showDecoder: false,
+        showLogicalX: false,
+        showLogicalZ: false,
+        formula: "X anticommutes with the neighboring Z-type plaquette checks, so those measurement signs flip",
+        visualTakeaway: "Green plaquette defects are violated Z-type stabilizers, just as yellow vertex defects are violated X-type stabilizers.",
+        highlightPlaquettes: [plaquetteKey(1, 1), plaquetteKey(1, 2)],
+        quiz: {
+          prompt: "What is the green plaquette pair really showing you?",
+          correct: "violated-z",
+          options: [
+            { id: "violated-z", label: "Two violated Z-type stabilizers", explanation: "Correct. The plaquette syndromes are the measured checks that changed sign." },
+            { id: "x-string", label: "The full X string itself", explanation: "Not directly. The stabilizer readout only exposes the boundary syndrome." },
+            { id: "logical-loop", label: "A logical operator", explanation: "A single local X error is detectable and not a logical loop by itself." },
+          ],
+        },
+      },
+      {
         id: "intro",
-        title: "1. Lattice Orientation",
+        title: "4. Lattice Orientation",
         headline: "Qubits live on edges",
         concept: "In the stabilizer formalism, we describe the code through commuting multi-qubit Pauli checks. The data qubits sit on edges, while the vertices and plaquettes track the code's local symmetries.",
         task: "Answer the quick check, then click the glowing edge once.",
@@ -435,7 +560,7 @@ export default function LearnToricCode() {
       },
       {
         id: "z-error",
-        title: "2. Z Error Syndromes",
+        title: "5. Z Error Syndromes",
         headline: "A Z error flips nearby vertex checks",
         concept: "Error detection comes from measuring symmetries of the state rather than individual qubits. A single Z fault anticommutes with the adjacent X-type vertex checks, so their measurement outcomes flip.",
         task: "Answer the check, then apply a Z on the highlighted edge and inspect the yellow endpoints.",
@@ -462,7 +587,7 @@ export default function LearnToricCode() {
       },
       {
         id: "x-error",
-        title: "3. X Error Syndromes",
+        title: "6. X Error Syndromes",
         headline: "An X error flips nearby plaquette checks",
         concept: "The complementary detection channel now appears. An X fault anticommutes with the neighboring Z-type plaquette checks, so the syndrome moves onto faces instead of vertices.",
         task: "Answer the check, then apply an X on the glowing edge and look for the green plaquette pair.",
@@ -489,7 +614,7 @@ export default function LearnToricCode() {
       },
       {
         id: "y-error",
-        title: "4. Y Combines Both Channels",
+        title: "7. Y Combines Both Channels",
         headline: "Y carries X and Z together",
         concept: "The Pauli operators form the language of the code, and Y combines the effects of X and Z. In syndrome language, that means one local Y fault excites both the vertex and plaquette channels at once.",
         task: "Apply a Y on the highlighted edge and compare both defect types at once.",
@@ -507,7 +632,7 @@ export default function LearnToricCode() {
       },
       {
         id: "string",
-        title: "5. Strings Hide Their Interior",
+        title: "8. Strings Hide Their Interior",
         headline: "Only string endpoints stay visible",
         concept: "Products of local Pauli errors form string operators. In the homological picture emphasized in the toric-code notes, the interior check flips cancel pairwise, so only the boundary of the string remains visible.",
         task: "Answer the check, then extend the prepared red string by clicking the second glowing edge.",
@@ -534,7 +659,7 @@ export default function LearnToricCode() {
       },
       {
         id: "loop",
-        title: "6. Closed Loops Are Stabilizers",
+        title: "9. Closed Loops Are Stabilizers",
         headline: "Contractible loops leave no syndrome",
         concept: "A contractible closed loop can be built from local stabilizer generators. Because it has no boundary, it creates no syndrome even though it is assembled from many local edge operations.",
         task: "Paint the four glowing edges with Z to close a small loop around one plaquette.",
@@ -552,7 +677,7 @@ export default function LearnToricCode() {
       },
       {
         id: "logical",
-        title: "7. Topology Creates Logical Qubits",
+        title: "10. Topology Creates Logical Qubits",
         headline: "A non-contractible loop acts logically",
         concept: "On a torus, some closed loops are non-contractible. Browne's notes frame these global cycles as the origin of encoded qubits: they preserve all local checks while acting nontrivially on the logical subspace.",
         task: "Answer the check, then paint the full red loop across the torus.",
@@ -579,7 +704,7 @@ export default function LearnToricCode() {
       },
       {
         id: "decoder",
-        title: "8. Decoding Uses the Syndrome Only",
+        title: "11. Decoding Uses the Syndrome Only",
         headline: "A decoder pairs defects and proposes recovery strings",
         concept: "Error correction is inferred from syndrome data alone. The decoder sees where the local checks were violated, proposes a recovery string, and hopes that its homology class matches the original fault.",
         task: "Answer the check, then apply the first suggested decoder step.",
@@ -605,7 +730,7 @@ export default function LearnToricCode() {
       },
       {
         id: "capstone",
-        title: "9. Capstone Lab",
+        title: "12. Capstone Lab",
         headline: "Decode a full configuration yourself",
         concept: "This final lab combines the main thread of both PDFs: stabilizer checks detect violated symmetries, strings connect the observed boundaries, and topology decides whether a recovery is harmless or logically nontrivial.",
         task: "Load any scenario, then remove all defects using manual moves, the decoder, or both.",
@@ -624,7 +749,12 @@ export default function LearnToricCode() {
     [logicalZLoop],
   );
 
-  const [stepIndex, setStepIndex] = useState(0);
+  const initialStepIndex = useMemo(() => {
+    const index = courseSteps.findIndex((step) => step.id === initialStepId);
+    return index >= 0 ? index : 0;
+  }, [courseSteps, initialStepId]);
+
+  const [stepIndex, setStepIndex] = useState(initialStepIndex);
   const [tool, setTool] = useState<Tool>("Z");
   const [torus, setTorus] = useState(false);
   const [showDecoder, setShowDecoder] = useState(false);
@@ -639,6 +769,10 @@ export default function LearnToricCode() {
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
 
   const currentStep = courseSteps[stepIndex];
+
+  useEffect(() => {
+    setStepIndex(initialStepIndex);
+  }, [initialStepIndex]);
 
   const hEdges = useMemo(() => {
     const arr: Array<{ key: string; r: number; c: number }> = [];
@@ -704,8 +838,15 @@ export default function LearnToricCode() {
   ).length;
 
   const focusEdgeSet = new Set(currentStep.focusEdges ?? []);
+  const highlightedVertexSet = new Set(currentStep.highlightVertices ?? []);
+  const highlightedPlaquetteSet = new Set(currentStep.highlightPlaquettes ?? []);
+  const highlightedSupportEdges = new Set([
+    ...(currentStep.highlightVertices ?? []).flatMap(vertexSupportEdges),
+    ...(currentStep.highlightPlaquettes ?? []).flatMap(plaquetteSupportEdges),
+  ]);
 
   const edgeLocked = (key: string) => {
+    if (currentStep.allowedTools.length === 0) return true;
     if (currentStep.interactionMode === "decoder_only") return true;
     if (currentStep.interactionMode === "focus") return !focusEdgeSet.has(key);
     return false;
@@ -780,9 +921,9 @@ export default function LearnToricCode() {
             <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: "#0f766e", textTransform: "uppercase" }}>
               Guided Module
             </div>
-            <h2 style={{ margin: "8px 0 6px", fontSize: 30 }}>Learn Toric Code</h2>
+            <h2 style={{ margin: "8px 0 6px", fontSize: 30 }}>{moduleTitle}</h2>
             <p style={{ margin: 0, color: "#475569", fontSize: 14 }}>
-              A slow, interactive path from stabilizer intuition to topology-aware decoding.
+              {moduleSubtitle}
             </p>
 
             <div style={{ marginTop: 14, marginBottom: 10, height: 10, borderRadius: 999, background: "#dbeafe", overflow: "hidden" }}>
@@ -1019,17 +1160,18 @@ export default function LearnToricCode() {
                       top: `${10 + r * 20}%`,
                       width: "18%",
                       height: "18%",
-                      border: active ? "2px solid #22c55e" : "1px solid #dbe5f0",
-                      background: active ? "#dcfce7" : "rgba(255,255,255,0.72)",
+                      border: active ? "2px solid #22c55e" : highlightedPlaquetteSet.has(key) ? "2px solid #10b981" : "1px solid #dbe5f0",
+                      background: active ? "#dcfce7" : highlightedPlaquetteSet.has(key) ? "rgba(220, 252, 231, 0.9)" : "rgba(255,255,255,0.72)",
                       borderRadius: 16,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 12,
-                      color: active ? "#166534" : "#94a3b8",
+                      color: active ? "#166534" : highlightedPlaquetteSet.has(key) ? "#047857" : "#94a3b8",
+                      boxShadow: highlightedPlaquetteSet.has(key) ? "0 0 0 4px rgba(16, 185, 129, 0.14)" : "none",
                     }}
                   >
-                    {active ? "plaquette syndrome" : ""}
+                    {active ? "plaquette syndrome" : highlightedPlaquetteSet.has(key) ? "B_p" : ""}
                   </div>
                 );
               }),
@@ -1065,10 +1207,20 @@ export default function LearnToricCode() {
                         ? `3px dashed ${suggestedTool === "Z" ? "#dc2626" : "#2563eb"}`
                         : focused
                           ? "3px solid #f59e0b"
+                          : highlightedSupportEdges.has(key)
+                            ? "3px solid #14b8a6"
+                            : currentStep.id === "stabilizer-intro"
+                              ? "2px solid #cbd5e1"
                           : showLogicalZ && onLogicalZ
                             ? "3px solid #dc2626"
                             : "none",
-                    boxShadow: focused ? "0 0 0 3px rgba(245, 158, 11, 0.2)" : showLogicalZ && onLogicalZ ? "0 0 0 3px rgba(220, 38, 38, 0.16)" : "none",
+                    boxShadow: focused
+                      ? "0 0 0 3px rgba(245, 158, 11, 0.2)"
+                      : highlightedSupportEdges.has(key)
+                        ? "0 0 0 3px rgba(20, 184, 166, 0.16)"
+                        : showLogicalZ && onLogicalZ
+                          ? "0 0 0 3px rgba(220, 38, 38, 0.16)"
+                          : "none",
                     opacity: locked && op === "I" ? 0.35 : 1,
                     outlineOffset: 2,
                   }}
@@ -1108,10 +1260,20 @@ export default function LearnToricCode() {
                         ? `3px dashed ${suggestedTool === "Z" ? "#dc2626" : "#2563eb"}`
                         : focused
                           ? "3px solid #f59e0b"
+                          : highlightedSupportEdges.has(key)
+                            ? "3px solid #14b8a6"
+                            : currentStep.id === "stabilizer-intro"
+                              ? "2px solid #cbd5e1"
                           : showLogicalX && onLogicalX
                             ? "3px solid #2563eb"
                             : "none",
-                    boxShadow: focused ? "0 0 0 3px rgba(245, 158, 11, 0.2)" : showLogicalX && onLogicalX ? "0 0 0 3px rgba(37, 99, 235, 0.16)" : "none",
+                    boxShadow: focused
+                      ? "0 0 0 3px rgba(245, 158, 11, 0.2)"
+                      : highlightedSupportEdges.has(key)
+                        ? "0 0 0 3px rgba(20, 184, 166, 0.16)"
+                        : showLogicalX && onLogicalX
+                          ? "0 0 0 3px rgba(37, 99, 235, 0.16)"
+                          : "none",
                     opacity: locked && op === "I" ? 0.35 : 1,
                     outlineOffset: 2,
                   }}
@@ -1136,9 +1298,9 @@ export default function LearnToricCode() {
                       height: 16,
                       transform: "translate(-50%, -50%)",
                       borderRadius: "50%",
-                      border: active ? "2px solid #eab308" : "2px solid #64748b",
-                      background: active ? "#fde047" : "white",
-                      boxShadow: active ? "0 0 12px rgba(234, 179, 8, 0.35)" : "none",
+                      border: active ? "2px solid #eab308" : highlightedVertexSet.has(key) ? "2px solid #f59e0b" : "2px solid #64748b",
+                      background: active ? "#fde047" : highlightedVertexSet.has(key) ? "#fef3c7" : "white",
+                      boxShadow: active ? "0 0 12px rgba(234, 179, 8, 0.35)" : highlightedVertexSet.has(key) ? "0 0 0 5px rgba(245, 158, 11, 0.14)" : "none",
                     }}
                   />
                 );
@@ -1164,8 +1326,28 @@ export default function LearnToricCode() {
             </div>
 
             <div style={{ ...panelStyle(), padding: 14, boxShadow: "none", background: "#f8fafc" }}>
-              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Decoder Preview</h3>
-              {showDecoder ? (
+              <h3 style={{ marginTop: 0, marginBottom: 8 }}>{currentStep.formula ? "Stabilizer Lens" : "Decoder Preview"}</h3>
+              {currentStep.formula ? (
+                <>
+                  <div style={{ color: "#0f172a", fontSize: 13, fontWeight: 700, lineHeight: 1.6, marginBottom: 8 }}>
+                    {currentStep.formula}
+                  </div>
+                  <div style={{ color: "#475569", fontSize: 13, lineHeight: 1.6, marginBottom: 10 }}>
+                    {currentStep.visualTakeaway}
+                  </div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ border: "1px solid #fde68a", borderRadius: 10, padding: 8, background: "#fffbeb", fontSize: 13, color: "#92400e" }}>
+                      Yellow vertices: X-type star stabilizers, measured as local parity checks.
+                    </div>
+                    <div style={{ border: "1px solid #a7f3d0", borderRadius: 10, padding: 8, background: "#ecfdf5", fontSize: 13, color: "#065f46" }}>
+                      Green plaquettes: Z-type stabilizers, also measured locally.
+                    </div>
+                    <div style={{ border: "1px solid #99f6e4", borderRadius: 10, padding: 8, background: "#f0fdfa", fontSize: 13, color: "#155e75" }}>
+                      Teal edges: the qubits multiplied together by the highlighted stabilizer generator.
+                    </div>
+                  </div>
+                </>
+              ) : showDecoder ? (
                 decoderSuggestions.length === 0 ? (
                   <div style={{ color: "#64748b", fontSize: 13 }}>No active syndrome pairs to connect right now.</div>
                 ) : (

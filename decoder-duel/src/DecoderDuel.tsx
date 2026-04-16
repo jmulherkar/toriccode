@@ -11,7 +11,6 @@ type Op = "I" | "X" | "Z" | "Y";
 type Tool = "X" | "Z" | "Y";
 type DecoderType = "greedy" | "mwpm";
 type PlayerMode = "solo" | "two_player" | "adversarial";
-type VisibilityMode = "full" | "errors_only";
 
 type Suggestion = {
   target: string;
@@ -252,8 +251,7 @@ function badgeStyle(): React.CSSProperties {
   };
 }
 
-function edgeColor(op: Op, showFullBoard: boolean) {
-  if (!showFullBoard) return "#cbd5e1";
+function edgeColor(op: Op) {
   if (op === "X") return "#3b82f6";
   if (op === "Z") return "#ef4444";
   if (op === "Y") return "#8b5cf6";
@@ -357,10 +355,11 @@ export default function DecoderDuel() {
   const [tool, setTool] = useState<Tool>("Z");
   const [playerMode, setPlayerMode] = useState<PlayerMode>("solo");
   const [decoderType, setDecoderType] = useState<DecoderType>("greedy");
-  const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>("full");
   const [torus, setTorus] = useState(false);
   const [showDecoder, setShowDecoder] = useState(false);
   const [showPaths, setShowPaths] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [game, setGame] = useState<GameState>(makeInitialState());
 
   const hEdges = useMemo(() => {
@@ -388,25 +387,11 @@ export default function DecoderDuel() {
 
   const vertexCount = countTrue(game.vertexDefects);
   const plaquetteCount = countTrue(game.plaquetteDefects);
-  const showFullBoard = visibilityMode === "full";
 
   const applyMove = (key: string) => {
     if (game.gameOver) return;
     setShowDecoder(false);
     setGame((state) => applySingleMove(state, key, tool, playerMode));
-  };
-
-  const applyDecoderAutomatically = () => {
-    if (decoderSuggestions.length === 0 || game.gameOver) return;
-    let next = { ...game, history: [...game.history] };
-    for (const step of decoderSuggestions) {
-      if (next.gameOver) break;
-      next = applySingleMove(next, step.target, step.tool, playerMode);
-    }
-    next.lastMoveSummary = `Decoder applied ${decoderSuggestions.length} suggested move(s).`;
-    next.history = [next.lastMoveSummary, ...next.history].slice(0, 10);
-    setGame(next);
-    setShowDecoder(false);
   };
 
   const reset = () => {
@@ -416,17 +401,14 @@ export default function DecoderDuel() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", padding: 24, fontFamily: "Arial, sans-serif" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 24, maxWidth: 1280, margin: "0 auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24, maxWidth: 1240, margin: "0 auto" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={panelStyle()}>
             <h2 style={{ marginTop: 0, marginBottom: 8 }}>Decoder Duel</h2>
-            <p style={{ color: "#475569", fontSize: 14 }}>
-              Competitive toric-code game. Use <strong>Z</strong> to toggle endpoint vertex defects, <strong>X</strong>{" "}
-              to toggle adjacent plaquette defects, and <strong>Y</strong> to do both.
-            </p>
-            <div style={{ color: "#64748b", fontSize: 13, marginBottom: 12 }}>
-              For concept walkthroughs and interactive lessons, use the <strong>Learn Toric Code</strong> tab.
+            <div style={{ color: "#64748b", fontSize: 13, marginBottom: 14 }}>
+              Choose a mode, pick an operator, and play.
             </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
               <button style={smallButton(tool === "Z")} onClick={() => setTool("Z")}>Z</button>
               <button style={smallButton(tool === "X")} onClick={() => setTool("X")}>X</button>
@@ -434,46 +416,18 @@ export default function DecoderDuel() {
             </div>
 
             <div style={{ ...panelStyle(), boxShadow: "none", padding: 12, marginBottom: 12 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Players</div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Mode</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                 <button style={smallButton(playerMode === "solo")} onClick={() => { setPlayerMode("solo"); setGame(makeInitialState()); setShowDecoder(false); }}>Solo</button>
                 <button style={smallButton(playerMode === "two_player")} onClick={() => { setPlayerMode("two_player"); setGame(makeInitialState()); setShowDecoder(false); }}>Two player</button>
                 <button style={smallButton(playerMode === "adversarial")} onClick={() => { setPlayerMode("adversarial"); setGame(makeInitialState()); setShowDecoder(false); }}>Adversarial</button>
               </div>
-              <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>Adversarial mode: P1 gets two attack moves, then P2 gets one decode move.</div>
+              {playerMode === "adversarial" && (
+                <div style={{ color: "#64748b", fontSize: 12, marginTop: 8 }}>
+                  P1 attacks twice, then P2 gets one decode move.
+                </div>
+              )}
             </div>
-
-            <div style={{ ...panelStyle(), boxShadow: "none", padding: 12, marginBottom: 12 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Board visibility</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <button style={smallButton(visibilityMode === "full")} onClick={() => setVisibilityMode("full")}>Full board</button>
-                <button style={smallButton(visibilityMode === "errors_only")} onClick={() => setVisibilityMode("errors_only")}>Errors only</button>
-              </div>
-            </div>
-
-            <div style={{ ...panelStyle(), boxShadow: "none", padding: 12, marginBottom: 12 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Decoder type</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <button style={smallButton(decoderType === "greedy")} onClick={() => setDecoderType("greedy")}>Greedy</button>
-                <button style={smallButton(decoderType === "mwpm")} onClick={() => setDecoderType("mwpm")}>Minimum weight matching</button>
-              </div>
-            </div>
-
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-              <div>
-                <div style={{ fontWeight: 700 }}>Torus mode</div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>Wrap edges left-right and top-bottom</div>
-              </div>
-              <input type="checkbox" checked={torus} onChange={(e) => setTorus(e.target.checked)} />
-            </label>
-
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-              <div>
-                <div style={{ fontWeight: 700 }}>Show decoder paths</div>
-                <div style={{ fontSize: 12, color: "#64748b" }}>Highlight suggested edges on the board</div>
-              </div>
-              <input type="checkbox" checked={showPaths} onChange={(e) => setShowPaths(e.target.checked)} />
-            </label>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
               <button style={smallButton(false)} onClick={reset}>Reset board</button>
@@ -481,13 +435,66 @@ export default function DecoderDuel() {
                 {showDecoder ? "Hide decoder" : "Show decoder"}
               </button>
             </div>
-            <button style={{ ...smallButton(false), width: "100%" }} disabled={decoderSuggestions.length === 0 || game.gameOver} onClick={applyDecoderAutomatically}>
-              Apply decoder automatically
+
+            <button style={{ ...smallButton(showHelp), width: "100%", marginTop: 12 }} onClick={() => setShowHelp((value) => !value)}>
+              {showHelp ? "Hide help" : "Help"}
             </button>
+
+            {showHelp && (
+              <div style={{ ...panelStyle(), boxShadow: "none", padding: 12, marginTop: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>How to play</div>
+                <div style={{ color: "#475569", fontSize: 14, lineHeight: 1.5, marginBottom: 10 }}>
+                  Try every mode to learn how Decoder Duel changes from puzzle-solving into competition.
+                </div>
+                <div style={{ color: "#475569", fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>
+                  <strong>Solo:</strong> practice placing X, Z, and Y operators at your own pace. Every move scores <code>1 + 3 x removed defects</code>, so closing defects is the fastest way to build score. Created defects are shown in the move log but do not subtract points.
+                </div>
+                <div style={{ color: "#475569", fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>
+                  <strong>Two player:</strong> players alternate turns on the same board. On your turn, you score <code>1 + 3 x removed defects</code>; adding defects does not directly cost points, but it changes the board for the next player. Compare P1 and P2 scores as the duel develops.
+                </div>
+                <div style={{ color: "#475569", fontSize: 14, lineHeight: 1.5 }}>
+                  <strong>Adversarial:</strong> P1 attacks for two turns, then P2 decodes for one turn. In this mode, P1 scores from defects created, while P2 scores <code>3 x removed defects</code>. After the decode step, P2 wins by clearing all defects; P1 wins if the board reaches 10 or more total defects.
+                </div>
+              </div>
+            )}
+
+            <button style={{ ...smallButton(showSettings), width: "100%", marginTop: 12 }} onClick={() => setShowSettings((value) => !value)}>
+              {showSettings ? "Hide settings" : "Settings"}
+            </button>
+
+            {showSettings && (
+              <div style={{ ...panelStyle(), boxShadow: "none", padding: 12, marginTop: 12 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Settings</div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Decoder type</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <button style={smallButton(decoderType === "greedy")} onClick={() => setDecoderType("greedy")}>Greedy</button>
+                    <button style={smallButton(decoderType === "mwpm")} onClick={() => setDecoderType("mwpm")}>Minimum weight matching</button>
+                  </div>
+                </div>
+
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Torus mode</div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>Wrap edges left-right and top-bottom</div>
+                  </div>
+                  <input type="checkbox" checked={torus} onChange={(e) => setTorus(e.target.checked)} />
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e2e8f0", borderRadius: 12, padding: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Show decoder paths</div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>Highlight suggested edges</div>
+                  </div>
+                  <input type="checkbox" checked={showPaths} onChange={(e) => setShowPaths(e.target.checked)} />
+                </label>
+              </div>
+            )}
           </div>
 
           <div style={panelStyle()}>
-            <h3 style={{ marginTop: 0 }}>Status</h3>
+            <h3 style={{ marginTop: 0 }}>Match</h3>
             <div>
               <span style={badgeStyle()}>Score: {game.score}</span>
               <span style={badgeStyle()}>Vertex defects: {vertexCount}</span>
@@ -502,23 +509,16 @@ export default function DecoderDuel() {
               </div>
             )}
             <div style={{ color: "#475569", marginBottom: 8 }}>{game.lastMoveSummary}</div>
-            <div style={{ color: "#475569", fontSize: 14 }}>Decoder: {showDecoder ? `${decoderSuggestions.length} suggested move(s)` : "hidden"}</div>
             <div style={{ color: "#475569", fontSize: 14 }}>Moves played: {game.moveCount}</div>
+            <div style={{ color: "#475569", fontSize: 14 }}>
+              Decoder suggestions: {showDecoder ? decoderSuggestions.length : 0}
+            </div>
             {game.gameOver && <div style={{ color: "#dc2626", fontWeight: 700, marginTop: 8 }}>Game Over: {game.winner}</div>}
-          </div>
-
-          <div style={panelStyle()}>
-            <h3 style={{ marginTop: 0 }}>Move Log</h3>
-            {game.history.map((line, i) => (
-              <div key={`${line}-${i}`} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 8, color: "#334155", fontSize: 14 }}>
-                {line}
-              </div>
-            ))}
           </div>
 
           {showDecoder && (
             <div style={panelStyle()}>
-              <h3 style={{ marginTop: 0 }}>{decoderType === "mwpm" ? "Minimum weight matching" : "Greedy"} decoder</h3>
+              <h3 style={{ marginTop: 0 }}>Decoder Queue</h3>
               {decoderSuggestions.length === 0 ? (
                 <div style={{ color: "#64748b" }}>No suggestions right now.</div>
               ) : (
@@ -530,10 +530,22 @@ export default function DecoderDuel() {
               )}
             </div>
           )}
+
+          <div style={panelStyle()}>
+            <h3 style={{ marginTop: 0 }}>Recent Moves</h3>
+            {game.history.slice(0, 6).map((line, i) => (
+              <div key={`${line}-${i}`} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 10, marginBottom: 8, color: "#334155", fontSize: 14 }}>
+                {line}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div style={panelStyle()}>
-          <h2 style={{ marginTop: 0 }}>Board</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>Board</h2>
+          <div style={{ color: "#64748b", fontSize: 13, marginBottom: 12 }}>
+            Click edges to play with the selected operator. The board shows syndrome structure rather than the hidden full error history.
+          </div>
           <div style={{ position: "relative", width: 760, height: 760, maxWidth: "100%", aspectRatio: "1 / 1", border: "1px solid #e2e8f0", borderRadius: 16, background: "white", margin: "0 auto" }}>
             {Array.from({ length: N }).flatMap((_, r) =>
               Array.from({ length: N }).map((_, c) => {
@@ -584,13 +596,11 @@ export default function DecoderDuel() {
                     fontSize: 10,
                     fontWeight: 700,
                     cursor: "pointer",
-                    background: edgeColor(op, showFullBoard),
+                    background: op === "I" ? "#cbd5e1" : edgeColor(op),
                     outline: showDecoder && showPaths && suggestedTool ? `3px dashed ${suggestedTool === "Z" ? "#ef4444" : "#3b82f6"}` : "none",
                     outlineOffset: 2,
                   }}
-                >
-                  {showFullBoard ? (op === "I" ? "" : op) : ""}
-                </button>
+                />
               );
             })}
 
@@ -614,13 +624,11 @@ export default function DecoderDuel() {
                     fontSize: 10,
                     fontWeight: 700,
                     cursor: "pointer",
-                    background: edgeColor(op, showFullBoard),
+                    background: op === "I" ? "#cbd5e1" : edgeColor(op),
                     outline: showDecoder && showPaths && suggestedTool ? `3px dashed ${suggestedTool === "Z" ? "#ef4444" : "#3b82f6"}` : "none",
                     outlineOffset: 2,
                   }}
-                >
-                  <span style={{ display: "inline-block", transform: "rotate(-90deg)" }}>{showFullBoard ? (op === "I" ? "" : op) : ""}</span>
-                </button>
+                />
               );
             })}
 

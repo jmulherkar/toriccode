@@ -2,20 +2,28 @@ import { useState } from "react";
 import DecoderDuel from "./DecoderDuel";
 import LearnToricCode from "./LearnToricCode";
 import QuantumQwirkle from "./QuantumQwirkle";
+import StabilizerLesson from "./StabilizerLesson";
 
-type Game = "decoder" | "learn" | "qwirkle";
+type Game = "decoder" | "stabilizer" | "learn" | "qwirkle";
 
 export default function App() {
   const [game, setGame] = useState<Game>("decoder");
+  const isQwirkleAvailable = false;
 
-  const buttonStyle = (active: boolean): React.CSSProperties => ({
+  const buttonStyle = (
+    active: boolean,
+    disabled = false,
+  ): React.CSSProperties => ({
     padding: "10px 16px",
     borderRadius: 12,
-    border: `1px solid ${active ? "#0f172a" : "#cbd5e1"}`,
-    background: active ? "#0f172a" : "white",
-    color: active ? "white" : "#0f172a",
-    cursor: "pointer",
+    border: `1px solid ${
+      disabled ? "#cbd5e1" : active ? "#0f172a" : "#cbd5e1"
+    }`,
+    background: disabled ? "#e2e8f0" : active ? "#0f172a" : "white",
+    color: disabled ? "#64748b" : active ? "white" : "#0f172a",
+    cursor: disabled ? "not-allowed" : "pointer",
     fontWeight: 600,
+    opacity: disabled ? 0.7 : 1,
   });
 
   return (
@@ -38,6 +46,13 @@ export default function App() {
         </button>
 
         <button
+          style={buttonStyle(game === "stabilizer")}
+          onClick={() => setGame("stabilizer")}
+        >
+          Stabilizer Lesson
+        </button>
+
+        <button
           style={buttonStyle(game === "learn")}
           onClick={() => setGame("learn")}
         >
@@ -45,8 +60,15 @@ export default function App() {
         </button>
 
         <button
-          style={buttonStyle(game === "qwirkle")}
-          onClick={() => setGame("qwirkle")}
+          style={buttonStyle(game === "qwirkle", !isQwirkleAvailable)}
+          onClick={() => {
+            if (isQwirkleAvailable) {
+              setGame("qwirkle");
+            }
+          }}
+          disabled={!isQwirkleAvailable}
+          aria-disabled={!isQwirkleAvailable}
+          title="Quantum Qwirkle is temporarily disabled."
         >
           Quantum Qwirkle
         </button>
@@ -55,8 +77,15 @@ export default function App() {
       {/* Game view */}
       <div>
         {game === "decoder" && <DecoderDuel />}
-        {game === "learn" && <LearnToricCode />}
-        {game === "qwirkle" && <QuantumQwirkle />}
+        {game === "stabilizer" && <StabilizerLesson />}
+        {game === "learn" && (
+          <LearnToricCode
+            initialStepId="intro"
+            moduleTitle="Learn Toric Code"
+            moduleSubtitle="A toric-code lesson that begins from the lattice picture and builds toward topology-aware decoding."
+          />
+        )}
+        {game === "qwirkle" && isQwirkleAvailable && <QuantumQwirkle />}
       </div>
     </div>
   );
